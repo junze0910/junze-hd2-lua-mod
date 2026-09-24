@@ -420,7 +420,7 @@ local function write_status()
   for _ in pairs(state.tables) do copies = copies + 1 end
   dump('AC8RackBackpack_STATUS.log', table.concat({
     first,
-    'revision=ac8-rack-backpack-v6.2',
+    'revision=ac8-rack-backpack-1.0',
     'phase=' .. tostring(state.phase),
     'updated=' .. os.date('%Y-%m-%d %H:%M:%S'),
     ('前置 = Bingus Shared Loader loader-v%s / API %s（来源 %s）'):format(

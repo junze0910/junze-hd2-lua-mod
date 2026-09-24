@@ -359,7 +359,7 @@ local function write_status()
   for _ in pairs(state.tables) do copies = copies + 1 end
   dump('GuardDogMg43_STATUS.log', table.concat({
     first,
-    'revision=guard-dog-mg43-v6',
+    'revision=guard-dog-mg43-1.0',
     'phase=' .. tostring(state.phase),
     'updated=' .. os.date('%Y-%m-%d %H:%M:%S'),
     ('前置 = Bingus Shared Loader loader-v%s / API %s（来源 %s）'):format(
