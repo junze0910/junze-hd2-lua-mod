@@ -1,7 +1,8 @@
 -- HD2-Addon: mods/dsh/tank_storm_smoke_swap
 
 -- ===========================================================================
---  暴风漩涡坦克（tank_storm）挂载替换：烟雾弹发生器 → 另一个挂载物
+--  更忙的 TD-110 驾驶员（Busier TD-110 Driver）
+--  暴风漩涡坦克（tank_storm）挂载替换：烟雾弹发生器 → 手操重机枪炮台
 --
 --  目标（纯挂载修改，只改 MountComponentData 里"挂载项"的 item 哈希）：
 --      暴风坦克 = 0xB0C9FAF4AF8903F9（12738988949818115065）
@@ -14,8 +15,8 @@
 --      旧 item = 0x3A061009AA31E9CB  4181046937756232139   tank_storm_smoke（烟雾弹发生器）
 --      新 item = 0xC25DC40EDE0E2D16  14005565984326167830
 --                = 一个「全加载的手操重机枪炮台」
---                  （组件构成实测：Turret + Wieldable + WeaponData/Magazine/Reload
---                    → 可被驾驶员操作、带弹匣装填的实弹炮台；依赖组件比 manned_turret 更少）
+--                  （组件构成实测：Turret + Wieldable + WeaponData
+--                    → 可被驾驶员操作的实弹炮台；依赖组件比 manned_turret 更少）
 --
 --  ⚠ 互斥：本 mod 与 mods/dsh/tank_storm_coop（TD-110 Co-Op）都要改写 +48 挂载项的
 --    item（前者换成手操炮台、后者与激光互换），属于二选一的两种改法，不要同时启用。
@@ -675,5 +676,5 @@ else
   report('全局 update 不可用，无法运行', true)
 end
 
-report(('已加载 v1.0（暴风坦克：烟雾弹挂载替换）；前置 loader v%s / API %s（来源 %s）'):format(
+report(('已加载 v1.0（更忙的 TD-110 驾驶员：烟雾弹发生器 → 手操重机枪炮台）；前置 loader v%s / API %s（来源 %s）'):format(
   tostring(ENV.version or '?'), tostring(ENV.api or '?'), tostring(ENV.source)))

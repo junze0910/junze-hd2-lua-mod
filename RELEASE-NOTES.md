@@ -16,12 +16,12 @@
 
 已实机验证：射界 ±180° 生效、挂载对调生效，并且多轮复查都保持（不会被游戏冲掉）。
 
-### 🔀 备选方案：TD-110 Better Driver Armament（更忙的 TD-110 驾驶员）
+### 🔀 备选方案：Busier TD-110 Driver（更忙的 TD-110 驾驶员）
 
 如果你**不想对调挂载**、只想让驾驶员位拿到一件能用的真武器，就用这个：
 
 * 把 TD-110 记录（`MountComponentData`，ID 123）里 `+48` 的 **烟雾弹发生器 → 手操重机枪炮台**
-  （`14005565984326167830` / `0xC25DC40EDE0E2D16`，一个可被驾驶员操作、带弹匣装填的实弹炮台，比 `manned_turret` 依赖的组件更少）；
+  （`14005565984326167830` / `0xC25DC40EDE0E2D16`，一个可被驾驶员操作的实弹炮台，比 `manned_turret` 依赖的组件更少）；
 * 它和 **TD-110 Co-Op 改的是同一条记录的同一个槽位（`+48`）**，所以两者**二选一**，同时启用会互相覆盖；
 * 同样适用下面那条时序规则：**先等日志出现"已替换"，再召唤载具**。
 
@@ -54,7 +54,7 @@
    | 文件 | Mod |
    |---|---|
    | `TD-110-Co-Op-v1.0.zip` | 更强调合作的 TD-110 |
-   | `TD-110-Better-Driver-Armament-v1.0.zip` | 更忙的 TD-110 驾驶员（与上一个**二选一**） |
+   | `TD-110-Busier-Driver-v1.0.zip` | 更忙的 TD-110 驾驶员（与上一个**二选一**） |
    | `Guard-Dog-MG43-v1.0.zip` | 更强的实弹狗 |
    | `AC8-Rack-Backpack-v1.0.zip` | AC-8 废案 75 发备弹背包 |
 
@@ -80,7 +80,7 @@ sha256sum -c SHA256SUMS.txt
 | 包 | SHA-256 |
 |---|---|
 | `TD-110-Co-Op-v1.0.zip` | `68f26fb77a8b515af29e6ee0d2bfc931ff10ed71ed2800035aab94e5df3b01d2` |
-| `TD-110-Better-Driver-Armament-v1.0.zip` | `af55feecae17b95025e79dd53e0606d9af87b84a4ec8a969a789607e8cba6400` |
+| `TD-110-Busier-Driver-v1.0.zip` | `af55feecae17b95025e79dd53e0606d9af87b84a4ec8a969a789607e8cba6400` |
 | `Guard-Dog-MG43-v1.0.zip` | `322974a874ed123a8c1c1f6af04373f329575b6a1a47dd1380a921058ad25ce7` |
 | `AC8-Rack-Backpack-v1.0.zip` | `a1e53ec459d162703928657d4cded1cec3148b50cdfd0e217e22d51a95de3044` |
 
@@ -102,7 +102,7 @@ sha256sum -c SHA256SUMS.txt
 
 * 🆕 **TD-110 Co-Op** — TD-110 storm tank: laser designator yaw **±20° → ±180°**, and a positional loadout swap
   (gunner slot `+24` ← smoke launcher, driver slot `+48` ← laser designator). Verified in game.
-* 🔀 **TD-110 Better Driver Armament** — the alternative to the above: driver slot `+48` **smoke launcher → manually-operated
+* 🔀 **Busier TD-110 Driver** — the alternative to the above: driver slot `+48` **smoke launcher → manually-operated
   heavy MG turret** (`14005565984326167830`). Mutually exclusive with TD-110 Co-Op (same slot).
 * ♻️ **AC-8 Cut-Content 75rnd Backpack** / **Stronger Kinetic Guard Dog** — repacked, all versions unified to v1.0.
 * ⚠️ **Timing rule for TD-110 Co-Op**: `MountComponentData` is read **once when a vehicle spawns** — after dropping into
