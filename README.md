@@ -7,6 +7,8 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 | **AC-8 Cut-Content 75rnd Backpack** | Swaps the AC-8 autocannon's rack backpack for the **cut-content 75-round spare backpack** (vanilla: 50 rounds) |
 | **Stronger Kinetic Guard Dog** | Swaps the guard dog's mounted weapon for the **SEAF MG-43** (kinetic), for stronger firepower |
 
+Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in each subfolder.
+
 > 中文说明见下方。两个 mod 均已在实机验证。
 
 《绝地潜兵 2》(Helldivers 2) 自研 Lua 内存补丁合集。**不修改任何游戏文件**，只在游戏运行时改写内存里的数据表。
@@ -29,7 +31,12 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 
 ## 安装
 
-1. 从 [Releases](../../releases) 下载对应的 zip；
+1. 从 [`dist/`](dist/) 目录下载 zip（也可在 [Releases](../../releases) 里找到同一份）：
+
+   | 文件 | Mod |
+   |---|---|
+   | `AC8-Rack-Backpack-v6.2.zip` | AC-8 废案 75 发备弹背包 |
+   | `Guard-Dog-MG43-v6.1.zip` | 更强的实弹狗 |
 2. 用 mod 管理器导入并启用（**不要手动把 `Addon/` 拷进 `data/`** —— 多个 addon 的包内文件名相同，会互相覆盖）；
 3. 进游戏。数据表是在任务里按需加载的，一般进图后约 1 分钟生效；
 4. 检查日志：`%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\`
