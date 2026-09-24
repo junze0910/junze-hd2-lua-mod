@@ -37,8 +37,6 @@
 --    · 表外副本：全内存按 24 字节指纹找同一条记录的其它副本，一并改（复核不过只记日志）。
 --
 --  ⚠ 互斥：与 mods/dsh/tank_storm_smoke_swap（TD-110 Better Driver Armament）都要改 +48，二选一。
---  ⚠ 诊断开关：MARKER_MODE = true 时只把炮手位 +24 换成"手操重机枪炮台"（看得见的对照组），
---     用来区分"改表没生效"和"生效了但看不见"。
 -- ===========================================================================
 
 local MOD = 'mods/dsh/tank_storm_coop'
@@ -287,11 +285,6 @@ local RACK_REC_LEN    = 120                        -- 挂载记录 120 字节
 -- 整块 dl_bin 里全局唯一 —— 只锚 node 不够：TD-220 堡垒的槽0/槽1 node 与 TD-110 逐字节相同。
 local RACK_PREFIX     = hex_be('DE10DB4EA0E68AD511570CE30200000057FA79CB01010000')
 local SILO_ITEM       = hex_le('8AFF7F0793A5BCED')-- 垂发火箭 10015863766813883629（槽3/4，我们不动）
-local MG_TURRET_ITEM  = hex_le('C25DC40EDE0E2D16')-- 手操重机枪炮台 14005565984326167830（**看得见**的对照件）
--- ★ 标记模式（诊断用）：只把 炮手位 +24 换成"手操重机枪炮台"，+48 一动不动。
---   目的：把"改表没生效"和"生效了但激光/烟雾看不见"区分开 —— 炮手位若出现可操的重机枪，
---   说明改表这条路是通的、+24 是活槽，问题就只剩"时机/副本"。
-local MARKER_MODE     = false
 local SILO_NODE_A     = hex_be('C049EE9D')         -- 槽3 node 0x9DEE49C0（复核用）
 local SILO_NODE_B     = hex_be('B59EDB27')         -- 槽4 node 0x27DB9EB5（复核用）
 -- 射界模板：±20 那条炮塔记录的 +8..+43（36 字节）。
@@ -510,29 +503,6 @@ local function rack_write_record(rec, tag, rec_id, magic, size)
       magic, rec, tostring(rec_id), rec - DATA_OFF - magic, tag)
   else
     where = ('记录 0x%X（%s）'):format(rec, tag)
-  end
-
-  if MARKER_MODE then
-    if gi == MG_TURRET_ITEM then
-      mark()
-      report(where .. '：炮手位已是"手操重机枪炮台"（标记模式目标状态）')
-      return 'target'
-    end
-    if write_bytes(gunner_addr, MG_TURRET_ITEM) then
-      state.writes = state.writes + 1
-      mark()
-      report(where .. ('（**标记模式**） 炮手位 +24 %s → 手操重机枪炮台 C25DC40EDE0E2D16（+48 未动）'):format(
-        hex(gi)), true)
-      dump('TankStormCoop_Addresses.log', table.concat({
-        ('命中记录          = 0x%X   （%s，标记模式）'):format(rec, tag),
-        ('炮手位 item +24   = 0x%X   写入前 %s → 现 %s'):format(
-          gunner_addr, hex(gi), hex(api.read(gunner_addr, 8) or '')),
-        ('驾驶员位 +48      = 0x%X   保持原样 %s'):format(driver_addr, hex(di)),
-      }, '\n') .. '\n')
-      return 'written'
-    end
-    report(where .. '：标记写入失败', true)
-    return 'refused'
   end
 
   if gi == SMOKE_ITEM and di == LASER_ITEM then

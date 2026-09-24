@@ -78,7 +78,7 @@ sha256sum -c SHA256SUMS.txt
 
 | 包 | SHA-256 |
 |---|---|
-| `TD-110-Co-Op-v1.0.zip` | `68f26fb77a8b515af29e6ee0d2bfc931ff10ed71ed2800035aab94e5df3b01d2` |
+| `TD-110-Co-Op-v1.0.zip` | `aa388d0055e6bf170cdbde398bdf52ffd214346eefb28995aa189928a8e66f45` |
 | `TD-110-Busier-Driver-v1.0.zip` | `af55feecae17b95025e79dd53e0606d9af87b84a4ec8a969a789607e8cba6400` |
 | `Guard-Dog-MG43-v1.0.zip` | `322974a874ed123a8c1c1f6af04373f329575b6a1a47dd1380a921058ad25ce7` |
 | `AC8-Rack-Backpack-v1.0.zip` | `a1e53ec459d162703928657d4cded1cec3148b50cdfd0e217e22d51a95de3044` |
