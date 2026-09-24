@@ -1,0 +1,9 @@
+# 构建产物 / 发布包（走 GitHub Releases，不提交二进制）
+build/
+dist/
+*.zip
+# 本地临时
+tmp/
+*.pkl
+*.dl_bin
+*.CT
