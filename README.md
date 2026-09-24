@@ -41,6 +41,9 @@ Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in eac
    | `Guard-Dog-MG43-v1.0.zip` | 更强的实弹狗 |
    | `TD-110-Co-Op-v1.0.zip` | 更强调合作的 TD-110 |
 2. 用 mod 管理器导入并启用（**不要手动把 `Addon/` 拷进 `data/`** —— 多个 addon 的包内文件名相同，会互相覆盖）；
+   * 本次版本的完整说明（含 TD-110 Co-Op 的时序规则）见 [`RELEASE-NOTES.md`](RELEASE-NOTES.md)；
+   * 下载包校验：`dist/SHA256SUMS.txt`——
+     `cd dist; certutil -hashfile TD-110-Co-Op-v1.0.zip SHA256`（Git Bash：`sha256sum -c SHA256SUMS.txt`）；
 3. 进游戏。数据表是在任务里按需加载的，一般进图后约 1 分钟生效。
    * **装 `TD-110 Co-Op` 时有一条额外规则**：挂载表（`MountComponentData`）是**生成载具时读一次**的静态配置，
      补丁必须**早于召唤载具** —— 进任务后先等 `TankStormCoop.log` 出现
