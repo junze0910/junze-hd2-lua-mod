@@ -727,5 +727,5 @@ else
   report('全局 update 不可用，无法运行', true)
 end
 
-report(('已加载 v6.1（内容锚点定位 + 维护扫描）；前置 loader v%s / API %s（来源 %s）'):format(
+report(('已加载 v1.0（内容锚点定位 + 维护扫描）；前置 loader v%s / API %s（来源 %s）'):format(
   tostring(ENV.version or '?'), tostring(ENV.api or '?'), tostring(ENV.source)))

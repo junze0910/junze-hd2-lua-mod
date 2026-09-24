@@ -6,10 +6,11 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 |---|---|
 | **AC-8 Cut-Content 75rnd Backpack** | Swaps the AC-8 autocannon's rack backpack for the **cut-content 75-round spare backpack** (vanilla: 50 rounds) |
 | **Stronger Kinetic Guard Dog** | Swaps the guard dog's mounted weapon for the **SEAF MG-43** (kinetic), for stronger firepower |
+| **TD-110 Co-Op** | Widens the TD-110 storm tank's laser designator yaw to **±180°**, and swaps the two mount slots (gunner ← smoke launcher, driver ← laser designator) |
 
 Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in each subfolder.
 
-> 中文说明见下方。**当前版本 v1.0**，两个 mod 均已在实机验证。
+> 中文说明见下方。**当前版本 v1.0**，三个 mod 均已在实机验证。
 
 《绝地潜兵 2》(Helldivers 2) 自研 Lua 内存补丁合集。**不修改任何游戏文件**，只在游戏运行时改写内存里的数据表。
 
@@ -19,10 +20,11 @@ Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in eac
 |---|---|---|
 | **AC-8 Cut-Content 75rnd Backpack** | **AC-8 废案 75 发备弹背包（替换原 50 发背包）** | 把战备「AC-8 机炮」包架上的背包，从原版 50 发备弹换成**废案版本的 75 发备弹背包** |
 | **Stronger Kinetic Guard Dog** | **更强的实弹狗** | 把机枪犬 `drone_mg` 挂载的武器换成 **SEAF MG-43（实弹）**，火力更强 |
+| **TD-110 Co-Op** | **更强调合作的 TD-110** | 把暴风漩涡坦克（TD-110）激光指示器的水平射界从 ±20° 放宽到 **±180°**，并把两个挂载位**按位置对调**：炮手位换成烟雾弹、驾驶员位换成激光指示器 |
 
 > 命名说明：mod 管理器会把 manifest 里的 `Name` 当文件夹名用，因此包内使用**纯 ASCII 名**（避免导入时出现"目标名/目录名或卷标语法不正确"）；中文名见上表。
 
-两个 mod 均已在实机验证：日志首行显示 `OK - 补丁生效中（N 处）`，并连续运行 40 分钟以上保持生效。
+三个 mod 均已在实机验证：日志首行显示 `OK - 补丁生效中（N 处）`，并连续运行 40 分钟以上保持生效。
 
 ## 依赖
 
@@ -37,11 +39,18 @@ Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in eac
    |---|---|
    | `AC8-Rack-Backpack-v1.0.zip` | AC-8 废案 75 发备弹背包 |
    | `Guard-Dog-MG43-v1.0.zip` | 更强的实弹狗 |
+   | `TD-110-Co-Op-v1.0.zip` | 更强调合作的 TD-110 |
 2. 用 mod 管理器导入并启用（**不要手动把 `Addon/` 拷进 `data/`** —— 多个 addon 的包内文件名相同，会互相覆盖）；
-3. 进游戏。数据表是在任务里按需加载的，一般进图后约 1 分钟生效；
+3. 进游戏。数据表是在任务里按需加载的，一般进图后约 1 分钟生效。
+   * **装 `TD-110 Co-Op` 时有一条额外规则**：挂载表（`MountComponentData`）是**生成载具时读一次**的静态配置，
+     补丁必须**早于召唤载具** —— 进任务后先等 `TankStormCoop.log` 出现
+     `挂载补丁已就绪：现在可以召唤 / 重新召唤载具了`（或 `TankStormCoop_STATUS.log` 里 `挂载状态 = 已就绪 ✓`），**再**召唤坦克。
+     （同一 mod 里的射界改动是引擎**实时读**的，不需要等。）
+   * ⚠ 与任何同样改写 TD-110 驾驶员挂载位（`+48`）的 mod **二选一**（例如 `TD-110 Better Driver Armament`）。
 4. 检查日志：`%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\`
    * `AC8RackBackpack_STATUS.log`
    * `GuardDogMg43_STATUS.log`
+   * `TankStormCoop_STATUS.log`（射界 + 挂载）
 
    第一行为 `OK - 补丁生效中（N 处）` 即表示成功。
 
@@ -53,7 +62,13 @@ Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in eac
 2. **内容锚点定位**：用目标字段自身的哈希定位（例如 AC-8 用旧背包哈希 + "命中点往前 64/192 字节必须是机炮本体"这个上下文校验），完全不依赖表布局；
 3. **多副本全打**：内存里同类型表可能有多份，只打第一份会出现"用一阵子就失效"；
 4. **持续维护**：5 秒逐地址复查、30 秒扫"已知副本 ±32KB"、10 分钟全量兜底；
-5. 写前 `VirtualProtect`、写后**回读校验**；任何校验不通过只记日志、绝不写入。
+5. 写前 `VirtualProtect`、写后**回读校验**；任何校验不通过只记日志、绝不写入；
+6. **静态配置表要抢在实体生成前打**：`MountComponentData` 这类"生成时读一次"的表，补丁晚于召唤就完全没效果
+   （表现为"写进去了、回读也对、游戏完全不理会"）。做法：没进任务前只在舰船上做便宜采样（12 个最大区域 × 8 MB，5 秒一轮），
+   一采样到 LDLD 表立刻转"全量 + 抢时间"扫描（每帧 6 ms、先扫目标表），并在日志里打印"已就绪"；
+7. **认记录要 ID + 内容双确认**：索引区条目 16 字节 = `(u64 实体哈希, u32 ID(recIdx), u32 pad)`，
+   ID 随构建漂移所以**运行时读**。**只锚 node 不够** —— 同底盘的不同载具会复用同一个 node
+   （TD-220 堡垒与 TD-110 的槽0/槽1 node 逐字节相同），全局 `find` 取第一处会改到别的载具。
 
 ## 目录结构
 
@@ -63,6 +78,8 @@ ac8-rack-backpack/
   DESIGN.md               # 设计说明
 guard-dog-mg43/
   guard_dog_mg43.lua
+td-110-co-op/
+  tank_storm_coop.lua
 ```
 
 打包成可分发的 zip 用 [Bingus Shared Loader 的 `tools/build_addon.py`](https://github.com/CowboyBingus/BingusSharedLoader)。
@@ -70,6 +87,7 @@ guard-dog-mg43/
 ## 兼容性
 
 * 验证环境：游戏 `1.8.45850.0`、Bingus Shared Loader v16（API 1）
+* 三个 mod 均已在 **2026-09-25** 实机复验：AC-8 75 发背包、更强的实弹狗、TD-110 Co-Op（射界 ±180 + 挂载对调）
 * 由于不依赖版本相关常量，同大版本内的小更新一般无需改动；若游戏改了数据表内容（例如换了背包哈希），addon 会**拒写并留下日志**，不会乱写。
 
 ## 免责声明
