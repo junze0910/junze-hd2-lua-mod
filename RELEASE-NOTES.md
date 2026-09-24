@@ -1,4 +1,4 @@
-# v1.0.1 — 四个 mod（新增 TD-110 Co-Op，以及它的备选「驾驶员武备」）
+# v1.0.1 — 四个 mod（新增 TD-110 Co-Op，以及它的备选「更忙的驾驶员」）
 
 > GitHub Release 建议用 tag **`v1.0.1`**（`v1.0` 这个 tag 已指向上一版、只有两个 mod）。
 > 下面这段可直接整篇粘到 Release 说明里。
@@ -16,7 +16,7 @@
 
 已实机验证：射界 ±180° 生效、挂载对调生效，并且多轮复查都保持（不会被游戏冲掉）。
 
-### 🔀 备选方案：TD-110 Better Driver Armament（更有用的 TD-110 驾驶员武备）
+### 🔀 备选方案：TD-110 Better Driver Armament（更忙的驾驶员）
 
 如果你**不想对调挂载**、只想让驾驶员位拿到一件能用的真武器，就用这个：
 
@@ -54,7 +54,7 @@
    | 文件 | Mod |
    |---|---|
    | `TD-110-Co-Op-v1.0.zip` | 更强调合作的 TD-110 |
-   | `TD-110-Better-Driver-Armament-v1.0.zip` | 更有用的 TD-110 驾驶员武备（与上一个**二选一**） |
+   | `TD-110-Better-Driver-Armament-v1.0.zip` | 更忙的驾驶员（与上一个**二选一**） |
    | `Guard-Dog-MG43-v1.0.zip` | 更强的实弹狗 |
    | `AC8-Rack-Backpack-v1.0.zip` | AC-8 废案 75 发备弹背包 |
 

@@ -22,7 +22,7 @@ Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in eac
 | **AC-8 Cut-Content 75rnd Backpack** | **AC-8 废案 75 发备弹背包（替换原 50 发背包）** | 把战备「AC-8 机炮」包架上的背包，从原版 50 发备弹换成**废案版本的 75 发备弹背包** |
 | **Stronger Kinetic Guard Dog** | **更强的实弹狗** | 把机枪犬 `drone_mg` 挂载的武器换成 **SEAF MG-43（实弹）**，火力更强 |
 | **TD-110 Co-Op** | **更强调合作的 TD-110** | 把暴风漩涡坦克（TD-110）激光指示器的水平射界从 ±20° 放宽到 **±180°**，并把两个挂载位**按位置对调**：炮手位换成烟雾弹、驾驶员位换成激光指示器 |
-| **TD-110 Better Driver Armament** | **更有用的 TD-110 驾驶员武备** | TD-110 Co-Op 的**替代方案**：把驾驶员位（`+48`）的**烟雾弹发生器**换成**手操重机枪炮台**（可被驾驶员操作、带弹匣装填的实弹炮台）。与 TD-110 Co-Op **二选一** |
+| **TD-110 Better Driver Armament** | **更忙的驾驶员** | TD-110 Co-Op 的**替代方案**：把驾驶员位（`+48`）的**烟雾弹发生器**换成**手操重机枪炮台**（可被驾驶员操作、带弹匣装填的实弹炮台）。与 TD-110 Co-Op **二选一** |
 
 > 命名说明：mod 管理器会把 manifest 里的 `Name` 当文件夹名用，因此包内使用**纯 ASCII 名**（避免导入时出现"目标名/目录名或卷标语法不正确"）；中文名见上表。
 
@@ -42,7 +42,7 @@ Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in eac
    | `AC8-Rack-Backpack-v1.0.zip` | AC-8 废案 75 发备弹背包 |
    | `Guard-Dog-MG43-v1.0.zip` | 更强的实弹狗 |
    | `TD-110-Co-Op-v1.0.zip` | 更强调合作的 TD-110 |
-   | `TD-110-Better-Driver-Armament-v1.0.zip` | 更有用的 TD-110 驾驶员武备（与上一个**二选一**） |
+   | `TD-110-Better-Driver-Armament-v1.0.zip` | 更忙的驾驶员（与上一个**二选一**） |
 2. 用 mod 管理器导入并启用（**不要手动把 `Addon/` 拷进 `data/`** —— 多个 addon 的包内文件名相同，会互相覆盖）；
    * 本次版本的完整说明（含 TD-110 Co-Op 的时序规则）见 [`RELEASE-NOTES.md`](RELEASE-NOTES.md)；
    * 下载包校验：`dist/SHA256SUMS.txt`——
