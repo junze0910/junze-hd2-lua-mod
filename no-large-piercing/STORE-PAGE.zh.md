@@ -1,5 +1,7 @@
 # No Large Piercing（没有大型穿刺）
 
+**项目地址 / 下载：** https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.3
+
 ## Description · 简介
 
 把《绝地潜兵 2》里的**大型穿刺命中特效档**去掉。

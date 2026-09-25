@@ -1,5 +1,7 @@
 # No Large Piercing
 
+**Project page / downloads · 项目地址 / 下载：** https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.3
+
 <!-- 双语发布页 · Bilingual store page
      Description / Installation instructions / Main features / Requirements / Shout outs
      每段先英文、后中文。Something 需要纯英文可直接用 STORE-PAGE.en.md，纯中文用 STORE-PAGE.zh.md -->

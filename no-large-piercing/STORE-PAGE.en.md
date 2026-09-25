@@ -1,5 +1,7 @@
 # No Large Piercing
 
+**Project page / downloads:** https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.3
+
 ## Description
 
 Removes the **large-piercing hit-effect tier** from Helldivers 2.

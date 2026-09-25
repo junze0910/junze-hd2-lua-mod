@@ -1,5 +1,7 @@
 # No Large Piercing
 
+**项目地址 / 下载：** https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.3
+
 > **分类：优化类（Optimization）**
 > **状态：已实机验证**（2026-09-25，Helldivers 2 运行时内存补丁）
 
