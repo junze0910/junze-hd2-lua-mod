@@ -1,3 +1,75 @@
+# v1.2 — 更均衡的爱国者/解放者外骨骼（两个版本，**二选一**）
+
+> GitHub Release 建议用 tag **`v1.2`**（`v1.0.1` 是上一版：四个 mod；v1.1.0 未发布，直接跳 v1.2）。下面这段可整篇粘到 Release 说明里。
+
+**日期**：2026-09-25 ～ **验证环境**：Helldivers 2 `1.8.45850.0` + Bingus Shared Loader **v16（API 1）**
+
+## 这个版本有什么
+
+### 🦾 更均衡的爱国者/解放者外骨骼
+
+两个方向、**挂载改动完全相同**：
+
+1. **EXO-49 解放者** 槽1（右臂）：右臂加农炮 → **爱国者的加特林炮塔**（`645713022044093730`）；
+2. **EXO-45 爱国者** 槽0（左臂）：导弹发射器 → **左臂加农炮**（`16570517418531528145`）。
+
+区别只在「战备附加」（`StratagemSettings.additional_stratagem`）写哪条记录：
+
+| 包 | 版本 | 需携带 | 效果 | 写入 |
+|---|---|---|---|---|
+| `More-Balanced-Exosuit-Patriot-v1.0.zip` | 携带爱国者版 | 爱国者 | 召唤爱国者时**额外附带一台解放者** | 爱国者记录 `0 → 10`（`StratagemType_EmancipatorExosuit`） |
+| `More-Balanced-Exosuit-Emancipator-v1.0.zip` | 携带解放者版 | 解放者 | 召唤解放者时**额外附带一台爱国者** | 解放者记录 `0 → 26`（`StratagemType_PatriotExosuit`） |
+
+⚠ **两版必须二选一**：两条记录同时被写成非 0 会形成「战备互相附加」（套娃），在战备/载具列表生成时崩溃。
+包里带**运行时保护**（fail-open）：扫到对向版的记录附加槽已经非 0 时整体拒写并写日志 —— 但请**只装一个**，不要依赖它。
+
+**定位方式（本版起）**：不再依赖飞鹰记录或统计特征，直接搜 `package` 值
+（`packages/generated/loadout/combat_walker` / `.../combat_walker_obsidian`），命中点 `+8` 校验 `icon`，
+附加槽 = 命中点 `+32`，并要求 `depends_on(+28)`、`max_in_loadout(+36)` 均为 0，否则拒写。
+
+**⚠ 时序**：`MountComponentData` 只在**生成载具时读一次**、`StratagemSettings` 只在**进任务后加载** ——
+进任务后先等 `BalancedExosuitPatriot_STATUS.log`（或 `BalancedExosuitEmancipator_STATUS.log`）出现
+`三处改动均已就绪：现在可以召唤 / 重新召唤载具了`，**再**召唤外骨骼。
+
+## 安装 / 更新
+
+| 文件 | Mod |
+|---|---|
+| `More-Balanced-Exosuit-Patriot-v1.0.zip` | 携带爱国者版（召唤爱国者 → 附带解放者） |
+| `More-Balanced-Exosuit-Emancipator-v1.0.zip` | 携带解放者版（召唤解放者 → 附带爱国者）。**与上一个二选一** |
+
+1. 如果你装过外骨骼的测试包（旧名 `Walker Loadout` / `walker_loadout`），**先在管理器里删掉旧条目**再导入新版；
+2. 管理器里：**删旧条目 → Purge → 导入新包 → 启用 → Deploy**（Arsenal 不是覆盖式更新）；
+3. **不要**手动把包里的 `Addon/` 拷进游戏 `data/`（多个 addon 的包内文件名相同，会互相覆盖）。
+
+`dist/SHA256SUMS.txt` 里是所有包的 SHA-256：
+
+```powershell
+cd dist
+Get-FileHash *.zip -Algorithm SHA256 | Format-Table -AutoSize
+# Linux / Git Bash:
+sha256sum -c SHA256SUMS.txt
+```
+
+| 包 | SHA-256 |
+|---|---|
+| `More-Balanced-Exosuit-Patriot-v1.0.zip` | `0f7c9ad697d87bdeb840ccec7dfbb76a75c2a62b859795f618d6f544113b9e19` |
+| `More-Balanced-Exosuit-Emancipator-v1.0.zip` | `bf1f1afa2f34296af227446e58b4a7ff8a67cf47b253ee0c6baeb169846a5ce7` |
+
+## 验证记录
+
+* 「携带爱国者版」的挂载两处 + 战备附加（`0 → 10`）：**实机验证通过**；
+* 两版的离线仿真（真实记录布局：`package@+168` / `icon@+176` / 附加槽 `+200`）4 场景 × 8 项全过：
+  正常写入 / 诱饵（同 package 坏 icon）不动 / 飞鹰式记录不动 / 对向记录不动 / 邻字段为 0 / 二选一保护触发；
+* 详见 `more-balanced-exosuit/DESIGN.md`。
+
+## 免责声明
+
+非官方作品，与 Arrowhead Game Studios / Sony Interactive Entertainment 无任何关联；
+仅在游戏运行时修改本机内存，**不分发任何游戏资产**。游戏启用了 nProtect GameGuard，使用第三方工具的风险由使用者自行承担。
+
+---
+
 # v1.0.1 — 四个 mod（新增 TD-110 Co-Op，以及它的备选「更忙的 TD-110 驾驶员」）
 
 > GitHub Release 建议用 tag **`v1.0.1`**（`v1.0` 这个 tag 已指向上一版、只有两个 mod）。
