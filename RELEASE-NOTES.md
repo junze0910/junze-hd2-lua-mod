@@ -1,3 +1,59 @@
+# v1.2.1 — 外骨骼：可用次数 → 1、冷却 → 0（两个包重打包为 v1.1）
+
+**日期**：2026-09-25 ～ **验证环境**：Helldivers 2 `1.8.45850.0` + Bingus Shared Loader **v16（API 1）**
+
+## 这个版本有什么
+
+### 🔧 两台外骨骼：可用次数 → 1、冷却 → 0
+
+在原有「挂载对调 + 携带 A 外骨骼战备时额外携带 B 外骨骼战备」的基础上，对**爱国者（EXO-45）和解放者（EXO-49）两条战备记录**各加两处改动：
+
+| 字段 | 记录内偏移 | 原版 | 现在 |
+|---|---|---|---|
+| `use`（可用次数） | `package-88` | 3 | **1** |
+| `cooldown_duration_success`（冷却） | `package-64`（float） | 420.0 | **0.0** |
+| `cooldown_duration_fail` | `package-60`（float） | 0.0 | 0.0 |
+
+* `use` **只写一次**、写完不再干涉 —— 这一次用掉就没了（不会一直维持在 1 变成无限次）；
+* 冷却**持续维护**（它是静态配置，本来就不该变）；
+* 记录定位仍是 **package 值 + `icon` 校验**，所以同 package 的 `PresidentReward` 变体（icon 不同）不会被误改。
+
+### 📦 包
+
+| 文件 | Mod |
+|---|---|
+| `More-Balanced-Exosuit-Patriot-v1.1.zip` | 携带爱国者版：**携带爱国者外骨骼战备时，额外携带解放者外骨骼战备** |
+| `More-Balanced-Exosuit-Emancipator-v1.1.zip` | 携带解放者版：**携带解放者外骨骼战备时，额外携带爱国者外骨骼战备**。**与上一个二选一** |
+
+两版相同的其余改动：挂载对调（EXO-49 右臂 → 爱国者加特林炮塔、EXO-45 左臂 → 左臂加农炮）、两台外骨骼可用次数 1 / 冷却 0。
+
+`dist/SHA256SUMS.txt` 已更新：
+
+| 包 | SHA-256 |
+|---|---|
+| `More-Balanced-Exosuit-Patriot-v1.1.zip` | `9251312ef4ea536cb56c4c898ba39f46fa0b0a3d06b63e18011332e74af9e421` |
+| `More-Balanced-Exosuit-Emancipator-v1.1.zip` | `97cbd29c029b94e519789a13fe285a504d5465fe3ab16c996805deb5e2583d12` |
+
+## 安装 / 更新
+
+1. 管理器里**删掉旧的 `Walker Loadout` / 外骨骼 v1.0 条目 → Purge → 导入新包 → 启用 → Deploy**（GUID 不变，但包内容全变了）；
+2. 进任务后先等 `BalancedExosuitPatriot_STATUS.log`（或 `BalancedExosuitEmancipator_STATUS.log`）出现
+   `四项改动均已就绪：现在可以召唤 / 重新召唤载具了`，**再**召唤外骨骼；
+3. ⚠ 两版**二选一**，别同时启用（包里带运行时保护会拒写并写日志，但不要依赖它）。
+
+## 验证记录（离线仿真，4 场景 × 14 项全过）
+
+真实记录布局（`package@+168` / `icon@+176` / 附加槽 `+200` / `use@+80` / 冷却 `@+104`）下：
+
+| 场景 | 结果 |
+|---|---|
+| 携带爱国者版 · 正常 | 爱国者记录附加 `0 → 10`；**两台外骨骼 use 3→1、冷却 420.0→0**；诱饵（同 package 坏 icon）与飞鹰式记录不动 ✓ |
+| 携带爱国者版 · 对向版已生效 | 附加写入**拒写**并留日志；④ 调整照常生效 ✓ |
+| 携带解放者版 · 正常 | 解放者记录附加 `0 → 26`；两台外骨骼 use→1、冷却→0 ✓ |
+| 携带解放者版 · 对向版已生效 | 附加**拒写**并留日志；④ 调整照常生效 ✓ |
+
+---
+
 # v1.2 — 更均衡的爱国者/解放者外骨骼（两个版本，**二选一**）
 
 > GitHub Release 建议用 tag **`v1.2`**（`v1.0.1` 是上一版：四个 mod；v1.1.0 未发布，直接跳 v1.2）。下面这段可整篇粘到 Release 说明里。
@@ -17,8 +73,8 @@
 
 | 包 | 版本 | 需携带 | 效果 | 写入 |
 |---|---|---|---|---|
-| `More-Balanced-Exosuit-Patriot-v1.0.zip` | 携带爱国者版 | 爱国者 | 召唤爱国者时**额外附带一台解放者** | 爱国者记录 `0 → 10`（`StratagemType_EmancipatorExosuit`） |
-| `More-Balanced-Exosuit-Emancipator-v1.0.zip` | 携带解放者版 | 解放者 | 召唤解放者时**额外附带一台爱国者** | 解放者记录 `0 → 26`（`StratagemType_PatriotExosuit`） |
+| `More-Balanced-Exosuit-Patriot-v1.0.zip` | 携带爱国者版 | 爱国者 | **携带爱国者外骨骼战备时，额外携带解放者外骨骼战备** | 爱国者记录 `0 → 10`（`StratagemType_EmancipatorExosuit`） |
+| `More-Balanced-Exosuit-Emancipator-v1.0.zip` | 携带解放者版 | 解放者 | **携带解放者外骨骼战备时，额外携带爱国者外骨骼战备** | 解放者记录 `0 → 26`（`StratagemType_PatriotExosuit`） |
 
 ⚠ **两版必须二选一**：两条记录同时被写成非 0 会形成「战备互相附加」（套娃），在战备/载具列表生成时崩溃。
 包里带**运行时保护**（fail-open）：扫到对向版的记录附加槽已经非 0 时整体拒写并写日志 —— 但请**只装一个**，不要依赖它。

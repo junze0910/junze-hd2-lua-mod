@@ -1,15 +1,16 @@
 -- HD2-Addon: mods/dsh/balanced_exosuit_emancipator
 
 -- ===========================================================================
---  更均衡的爱国者/解放者外骨骼 · 携带解放者版（外骨骼三件套 v1.0）
+--  更均衡的爱国者/解放者外骨骼 · 携带解放者版（外骨骼三件套 v1.1）
 --
 --  ① MountComponentData · combat_walker_obsidian（EXO-49 解放者）
 --       槽1（右臂）  原 18417602992972518459（右臂加农炮） → 645713022044093730（爱国者加特林炮塔）
 --  ② MountComponentData · combat_walker（EXO-45 爱国者）
 --       槽0（左臂）  原 9388736439472594613（导弹发射器）  → 16570517418531528145（左臂加农炮）
---  ③ StratagemSettings · 解放者外骨骼（StratagemType_EmancipatorExosuit） 的召唤战备
---       additional_stratagem（"战备附加"槽） 0 → 26（= StratagemType_PatriotExosuit）
---       即：**需携带解放者** —— 召唤解放者时额外附带爱国者（26 号战备）
+--  ③ StratagemSettings · 解放者外骨骼（StratagemType_EmancipatorExosuit）的"战备附加"槽
+--       additional_stratagem 0 → 26（= StratagemType_PatriotExosuit）：
+--       **携带解放者外骨骼战备时，额外携带爱国者外骨骼战备**
+--  ④ 两台外骨骼通用调整：可用次数（use）3 → 1；冷却（cooldown_duration_success）420.0 → 0.0
 --
 --  ⚠⚠ 与同系列的另一个版本（携带爱国者版）**二选一**：两条记录同时被写成非 0 会形成"战备套娃"（互相附加）
 --      并在载具/战备列表生成时崩溃。本 mod 因此带运行时保护：扫到"对向记录"的附加槽
@@ -104,6 +105,17 @@ local ZERO4           = string.char(0, 0, 0, 0)
 -- 对向版 mod 的目标记录（用于二选一检测；写的是另一条记录，两个都写会套娃崩溃）
 local COUNTER_PACKAGE = hex_le('22749A294788AF66')   -- 2482778796672462694 packages/generated/loadout/combat_walker
 local COUNTER_ICON    = hex_le('396ECA60A6E80E17')   -- 4138467624065961495 icon
+-- ④ 两台外骨骼的通用调整（两版相同）：可用次数 → 1，冷却 → 0
+--   use                        @ package-88（u32，原版 3）
+--   cooldown_duration_success  @ package-64（float，原版 420.0）
+--   cooldown_duration_fail     @ package-60（float，原版 0.0）
+--   注意：use 只写一次、写完不再干涉（用掉这一次就该没了）；冷却持续维护（它本来就不该变）。
+local OFF_USE    = -88
+local OFF_CD_OK  = -64
+local OFF_CD_F   = -60
+local USE_WANT   = 1
+local USE_BYTES  = hex_le('00000001')
+state.tuned = {}
 local WALKER_PAIR     = WALKER_PAYLOAD .. SHUTTLE_PAYLOAD
 local EAGLE_PAIRS     = {}
 for _, p in ipairs(EAGLE_PAYLOADS) do EAGLE_PAIRS[#EAGLE_PAIRS + 1] = p .. SHUTTLE_PAYLOAD end
@@ -452,6 +464,63 @@ local function strat_try_apply()
   end
 end
 
+-- ---------------------------------------------------------------- ④ 外骨骼通用调整
+-- 两台外骨骼（爱国者 + 解放者）各写一处：可用次数 → 1、冷却 → 0。
+-- 记录定位方式同 ③：package 命中 + icon 校验；两条记录分别在 pkg_hits / counter_hits 里。
+local function tune_one(c)
+  local ok = true
+  if not state.tuned[c] then
+    local cur = api.read(c + OFF_USE, 4)
+    if not cur then return false end
+    local now = decode32(cur, 0)
+    if now == USE_WANT then
+      state.tuned[c] = true
+      report(('外骨骼调整：0x%X 可用次数已是 %d'):format(c, USE_WANT))
+    elseif write_bytes(c + OFF_USE, USE_BYTES) then
+      state.tuned[c] = true
+      state.writes = state.writes + 1
+      report(('外骨骼调整：可用次数 %d → %d（0x%X，package-88）'):format(now, USE_WANT, c), true)
+    else
+      ok = false
+    end
+  end
+  for _, off in ipairs({ OFF_CD_OK, OFF_CD_F }) do
+    local v = api.read(c + off, 4)
+    if not v then
+      ok = false
+    elseif v ~= ZERO4 then
+      if write_bytes(c + off, ZERO4) then
+        state.writes = state.writes + 1
+        state.slots[c + off] = { kind = 'cooldown', expect = ZERO4 }
+        report(('外骨骼调整：冷却字段（package%+d）→ 0（0x%X）'):format(off, c + off), true)
+      else
+        ok = false
+      end
+    else
+      state.slots[c + off] = { kind = 'cooldown', expect = ZERO4 }
+    end
+  end
+  return ok
+end
+
+local function exo_tune_try_apply()
+  if state.tune_ok then return end
+  local ok1, ok2 = false, false
+  for c in pairs(state.pkg_hits) do
+    if api.read(c + 8, 8) == ICON_WALKER then ok1 = tune_one(c) or ok1 end
+  end
+  for c in pairs(state.counter_hits) do
+    if api.read(c + 8, 8) == COUNTER_ICON then ok2 = tune_one(c) or ok2 end
+  end
+  if ok1 and ok2 then
+    state.tune_ok = true
+    report('外骨骼调整完成：两台外骨骼 可用次数=1、冷却=0', true)
+  elseif not state.tune_warned and (next(state.pkg_hits) or next(state.counter_hits)) then
+    state.tune_warned = true
+    report(('外骨骼调整：等待两台外骨骼记录（爱国者=%s 解放者=%s）'):format(tostring(ok1), tostring(ok2)), true)
+  end
+end
+
 local function apply(magic)
   local head = api.read(magic + 8, 4)
   if not head then return end
@@ -469,11 +538,11 @@ local function write_status()
              or (state.gave_up and 'FAILED - 目标表始终没出现（看 Census.log）' or 'WORKING - 扫描中')
   dump('BalancedExosuitEmancipator_STATUS.log', table.concat({
     first,
-    'revision=walker-loadout-emancipator-1.0' .. (DRY_RUN and '-dryrun' or ''),
+    'revision=balanced-exosuit-emancipator-1.1' .. (DRY_RUN and '-dryrun' or ''),
     'phase=' .. tostring(state.phase),
     'updated=' .. os.date('%Y-%m-%d %H:%M:%S'),
     ('前置 = Bingus Shared Loader loader-v%s / API %s（来源 %s）'):format(tostring(ENV.version or '?'), tostring(ENV.api or '?'), tostring(ENV.source)),
-    '改动 = ①EXO-49 槽1 右臂加农炮→加特林炮塔 ②EXO-45 槽0 导弹发射器→左臂加农炮 ③战备附加 0→10',
+    '改动 = ①EXO-49 槽1 右臂加农炮→加特林炮塔 ②EXO-45 槽0 导弹发射器→左臂加农炮 ③携带解放者外骨骼战备时额外携带爱国者外骨骼战备（战备附加 0→26） ④两台外骨骼 可用次数→1 冷却→0',
     (state.ready and '战备状态 = 已就绪 ✓ 可以在飞船上看附加条目了（列表在进任务时定型，改完请回飞船重新进任务）' or '战备状态 = 未就绪 ✗ 先别召唤载具（正在抢时间扫表：每帧 16ms，优先战备表）'),
     ('已写=%d 处  拒绝=%d  轮次=%d  空轮=%d  帧=%d'):format(state.writes, state.refusals, state.rounds, state.empty_rounds, state.frame),
     ('内存里的表副本 = %d 处   维护扫描 = 每 %d 秒'):format(copies, MAINTAIN_FRAMES / 60),
@@ -586,6 +655,8 @@ local function slice()
         if not ok3 then state.errs = state.errs + 1; if (state.strat_errs or 0) < 3 then state.strat_errs = (state.strat_errs or 0) + 1; report('战备内容扫描异常: ' .. tostring(err3), true) end end
         local ok4, err4 = pcall(strat_try_apply)
         if not ok4 then state.errs = state.errs + 1; if (state.strat_errs or 0) < 3 then state.strat_errs = (state.strat_errs or 0) + 1; report('战备附加异常: ' .. tostring(err4), true) end end
+        local ok4b, err4b = pcall(exo_tune_try_apply)
+        if not ok4b then state.errs = state.errs + 1; if (state.tune_errs or 0) < 3 then state.tune_errs = (state.tune_errs or 0) + 1; report('外骨骼调整异常: ' .. tostring(err4b), true) end end
         state.previous = buf:sub(-SCAN_OVERLAP)
       else state.previous = '' end
       state.region_offset = state.region_offset + amount
@@ -598,13 +669,15 @@ end
 local function end_round()
   local ok5, err5 = pcall(strat_try_apply)
   if not ok5 and state.errs <= 3 then report('战备附加异常(end_round): ' .. tostring(err5), true) end
+  local ok6, err6 = pcall(exo_tune_try_apply)
+  if not ok6 and state.errs <= 3 then report('外骨骼调整异常(end_round): ' .. tostring(err6), true) end
   local kind = state.scan_kind or 'full'
   state.regions = nil
-  if (state.rack_ok and state.strat_ok) then
+  if (state.rack_ok and state.strat_ok and state.tune_ok) then
     state.empty_rounds, state.phase = 0, 'patched'   -- 只有三处全部完成才进维护模式
     if not state.ready then
       state.ready = true
-      report('三处改动均已就绪：**现在可以召唤 / 重新召唤载具了**', true)
+      report('四项改动均已就绪：**现在可以召唤 / 重新召唤载具了**', true)
     end
     if kind == 'window' then
       report(('维护扫描：窗口 %d 个，命中 %d'):format(#(state.regions or {}), state.round_hits))
@@ -741,5 +814,5 @@ else
   state.phase = 'no_update'; report('全局 update 不可用，无法运行', true)
 end
 
-report(('已加载 v1.0·携带解放者版（更均衡的爱国者/解放者外骨骼：EXO-49 槽1→加特林炮塔 / EXO-45 槽0→左臂加农炮 / 召唤解放者额外附带 %d 号战备 = 爱国者））；前置 loader v%s / API %s（来源 %s）'):format(
+report(('已加载 v1.1·携带解放者版（更均衡的爱国者/解放者外骨骼：EXO-49 槽1→加特林炮塔 / EXO-45 槽0→左臂加农炮 / 携带解放者外骨骼战备时额外携带爱国者外骨骼战备（%d 号） / 两台外骨骼 可用次数→1、冷却→0）；前置 loader %s / API %s（来源 %s）'):format(
   ATTACH_VALUE, tostring(ENV.version or '?'), tostring(ENV.api or '?'), tostring(ENV.source)))

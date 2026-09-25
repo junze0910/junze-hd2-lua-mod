@@ -8,12 +8,12 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 | **Stronger Kinetic Guard Dog** | Swaps the guard dog's mounted weapon for the **SEAF MG-43** (kinetic), for stronger firepower |
 | **TD-110 Co-Op** | Widens the TD-110 storm tank's laser designator yaw to **±180°**, and swaps the two mount slots (gunner ← smoke launcher, driver ← laser designator) |
 | **Busier TD-110 Driver** | Alternative to TD-110 Co-Op: replaces the TD-110 driver-slot **smoke launcher** with a **manually-operated heavy MG turret** (pick one of the two — they touch the same slot) |
-| **More Balanced Exosuit - Patriot** | Exosuit arm swap (see below) **plus**: summoning the **Patriot** exosuit also drops an **Emancipator** |
-| **More Balanced Exosuit - Emancipator** | Same arm swap **plus**: summoning the **Emancipator** also drops a **Patriot** (pick **one** of these two — running both crashes the stratagem list) |
+| **More Balanced Exosuit - Patriot** | Exosuit arm swap (see below), **plus**: carrying the **Patriot** exosuit stratagem also gives you the **Emancipator** one — and **both exosuits get 1 use / 0 cooldown** |
+| **More Balanced Exosuit - Emancipator** | Same arm swap, **plus**: carrying the **Emancipator** stratagem also gives you the **Patriot** one — **both exosuits get 1 use / 0 cooldown** (pick **one** of these two — running both crashes the stratagem list) |
 
 Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in each subfolder.
 
-> 中文说明见下方。**当前版本 v1.2**：四个老 mod 已实机验证；「更均衡的爱国者/解放者外骨骼」两版见下方说明。
+> 中文说明见下方。**当前版本 v1.2.1**：四个老 mod 已实机验证；「更均衡的爱国者/解放者外骨骼」两版见下方说明。
 
 《绝地潜兵 2》(Helldivers 2) 自研 Lua 内存补丁合集。**不修改任何游戏文件**，只在游戏运行时改写内存里的数据表。
 
@@ -25,12 +25,12 @@ Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in eac
 | **Stronger Kinetic Guard Dog** | **更强的实弹狗** | 把机枪犬 `drone_mg` 挂载的武器换成 **SEAF MG-43（实弹）**，火力更强 |
 | **TD-110 Co-Op** | **更强调合作的 TD-110** | 把暴风漩涡坦克（TD-110）激光指示器的水平射界从 ±20° 放宽到 **±180°**，并把两个挂载位**按位置对调**：炮手位换成烟雾弹、驾驶员位换成激光指示器 |
 | **Busier TD-110 Driver** | **更忙的 TD-110 驾驶员** | TD-110 Co-Op 的**替代方案**：把驾驶员位（`+48`）的**烟雾弹发生器**换成**手操重机枪炮台**（可被驾驶员操作的实弹炮台）。与 TD-110 Co-Op **二选一** |
-| **More Balanced Exosuit - Patriot** | **更均衡的爱国者/解放者外骨骼 · 携带爱国者版** | 挂载对调（见下）+ **召唤爱国者时额外附带一台解放者** |
-| **More Balanced Exosuit - Emancipator** | **更均衡的爱国者/解放者外骨骼 · 携带解放者版** | 挂载对调（见下）+ **召唤解放者时额外附带一台爱国者**。与上一行**二选一**（同时装会战备套娃崩溃） |
+| **More Balanced Exosuit - Patriot** | **更均衡的爱国者/解放者外骨骼 · 携带爱国者版** | **携带爱国者外骨骼战备时，额外携带解放者外骨骼战备**；另有挂载对调 + 两台外骨骼可用次数 1、冷却 0 |
+| **More Balanced Exosuit - Emancipator** | **更均衡的爱国者/解放者外骨骼 · 携带解放者版** | **携带解放者外骨骼战备时，额外携带爱国者外骨骼战备**；另有挂载对调 + 两台外骨骼可用次数 1、冷却 0。与上一行**二选一**（同时装会战备套娃崩溃） |
 
 > 命名说明：mod 管理器会把 manifest 里的 `Name` 当文件夹名用，因此包内使用**纯 ASCII 名**（避免导入时出现"目标名/目录名或卷标语法不正确"）；中文名见上表。
 
-六个 mod 的实机/仿真状态：前四个（AC-8、实弹狗、TD-110 Co-Op、更忙的驾驶员）均已在 **2026-09-25** 实机验证（日志首行 `OK - 补丁生效中（N 处）`，连续运行 40 分钟以上保持生效）；外骨骼「携带爱国者版」的原型已在实机验证通过，「携带解放者版」与两版的二选一保护为**离线仿真验证**（4 场景 × 8 项全过，见 `more-balanced-exosuit/DESIGN.md`）。外骨骼的挂载改动（两版相同）：**EXO-49 右臂 → 爱国者加特林炮塔**、**EXO-45 左臂 → 左臂加农炮**。
+六个 mod 的实机/仿真状态：前四个（AC-8、实弹狗、TD-110 Co-Op、更忙的驾驶员）均已在 **2026-09-25** 实机验证（日志首行 `OK - 补丁生效中（N 处）`，连续运行 40 分钟以上保持生效）；外骨骼「携带爱国者版」的原型已在实机验证通过，「携带解放者版」与两版的二选一保护为**离线仿真验证**（4 场景 × 8 项全过，见 `more-balanced-exosuit/DESIGN.md`）。外骨骼两版（相同部分）：挂载 **EXO-49 右臂 → 爱国者加特林炮塔**、**EXO-45 左臂 → 左臂加农炮**；两台外骨骼 **可用次数 `use` 3 → 1**、**冷却 `cooldown_duration_success` 420.0 → 0.0**（`use` 只写一次，用掉就没了）。
 
 ## 依赖
 
@@ -47,8 +47,8 @@ Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in eac
    | `Guard-Dog-MG43-v1.0.zip` | 更强的实弹狗 |
    | `TD-110-Co-Op-v1.0.zip` | 更强调合作的 TD-110 |
    | `TD-110-Busier-Driver-v1.0.zip` | 更忙的 TD-110 驾驶员（与上一个**二选一**） |
-   | `More-Balanced-Exosuit-Patriot-v1.0.zip` | 更均衡的外骨骼 · **携带爱国者版**（召唤爱国者 → 附带解放者） |
-   | `More-Balanced-Exosuit-Emancipator-v1.0.zip` | 更均衡的外骨骼 · **携带解放者版**（召唤解放者 → 附带爱国者）。与上一个**二选一** |
+   | `More-Balanced-Exosuit-Patriot-v1.1.zip` | 更均衡的外骨骼 · **携带爱国者版**（携带爱国者战备 → 额外携带解放者战备；可用次数 1、冷却 0） |
+   | `More-Balanced-Exosuit-Emancipator-v1.1.zip` | 更均衡的外骨骼 · **携带解放者版**（携带解放者战备 → 额外携带爱国者战备；可用次数 1、冷却 0）。与上一个**二选一** |
 2. 用 mod 管理器导入并启用（**不要手动把 `Addon/` 拷进 `data/`** —— 多个 addon 的包内文件名相同，会互相覆盖）；
    * 本次版本的完整说明（含 TD-110 Co-Op 的时序规则）见 [`RELEASE-NOTES.md`](RELEASE-NOTES.md)；
    * 下载包校验：`dist/SHA256SUMS.txt`——
@@ -113,7 +113,7 @@ more-balanced-exosuit/
 * 验证环境：游戏 `1.8.45850.0`、Bingus Shared Loader v16（API 1）
 * 四个 mod 均已在 **2026-09-25** 实机复验：AC-8 75 发背包、更强的实弹狗、TD-110 Co-Op（射界 ±180 + 挂载对调）、
   TD-110 Better Driver Armament（驾驶员位换手操重机枪炮台）
-* 外骨骼两版（2026-09-25）：挂载两处 + 「携带爱国者版」的战备附加已实机验证；「携带解放者版」与二选一保护为离线仿真验证
+* 外骨骼两版（2026-09-25）：挂载两处 + 「携带爱国者版」的战备附加已实机验证；「携带解放者版」、二选一保护、可用次数/冷却改动为离线仿真验证（4 场景 × 14 项全过）
 * 由于不依赖版本相关常量，同大版本内的小更新一般无需改动；若游戏改了数据表内容（例如换了背包哈希），addon 会**拒写并留下日志**，不会乱写。
 
 ## 免责声明
