@@ -35,18 +35,20 @@
 
 ## 📦 合集内容（8 个 mod）
 
-| # | 包 | 管理器内名称 | 分类 | 作用 |
+| # | 包 | 管理器内名称 | Tag | 作用 |
 |---|---|---|---|---|
-| 1 | `AC8-Rack-Backpack-v1.0.zip` | **AC-8 Cut-Content 75rnd Backpack** | 内容恢复 | AC-8 机炮包架的背包：原版 **50 发** → 废案版本 **75 发** |
-| 2 | `Guard-Dog-MG43-v1.0.zip` | **Stronger Kinetic Guard Dog** | 强化 | 机枪犬 `drone_mg` 挂载武器 → **SEAF MG-43（实弹）** |
-| 3 | `TD-110-Co-Op-v1.0.zip` | **TD-110 Co-Op** | 玩法 | TD-110 激光指示器射界 **±20° → ±180°**；炮手位 `+24` → 烟雾弹、驾驶员位 `+48` → 激光指示器。**与 #4 二选一** |
-| 4 | `TD-110-Busier-Driver-v1.0.zip` | **Busier TD-110 Driver** | 玩法 | TD-110 驾驶员位 `+48` 烟雾弹 → **手操重机枪炮台**。**与 #3 二选一** |
-| 5 | `More-Balanced-Exosuit-Patriot-v1.1.zip` | **More Balanced Exosuit - Patriot** | 平衡 | 携带爱国者战备 → 额外携带解放者战备；挂载对调 + 两台外骨骼可用次数 1、冷却 0。**与 #6 二选一** |
-| 6 | `More-Balanced-Exosuit-Emancipator-v1.1.zip` | **More Balanced Exosuit - Emancipator** | 平衡 | 携带解放者战备 → 额外携带爱国者战备；其余同 #5。**与 #5 二选一** |
+| 1 | `AC8-Rack-Backpack-v1.0.zip` | **AC-8 Cut-Content 75rnd Backpack** | — | AC-8 机炮包架的背包：原版 **50 发** → 废案版本 **75 发** |
+| 2 | `Guard-Dog-MG43-v1.0.zip` | **Stronger Kinetic Guard Dog** | — | 机枪犬 `drone_mg` 挂载武器 → **SEAF MG-43（实弹）** |
+| 3 | `TD-110-Co-Op-v1.0.zip` | **TD-110 Co-Op** | — | TD-110 激光指示器射界 **±20° → ±180°**；炮手位 `+24` → 烟雾弹、驾驶员位 `+48` → 激光指示器。**与 #4 二选一** |
+| 4 | `TD-110-Busier-Driver-v1.0.zip` | **Busier TD-110 Driver** | — | TD-110 驾驶员位 `+48` 烟雾弹 → **手操重机枪炮台**。**与 #3 二选一** |
+| 5 | `More-Balanced-Exosuit-Patriot-v1.1.zip` | **More Balanced Exosuit - Patriot** | — | 携带爱国者战备 → 额外携带解放者战备；挂载对调 + 两台外骨骼可用次数 1、冷却 0。**与 #6 二选一** |
+| 6 | `More-Balanced-Exosuit-Emancipator-v1.1.zip` | **More Balanced Exosuit - Emancipator** | — | 携带解放者战备 → 额外携带爱国者战备；其余同 #5。**与 #5 二选一** |
 | 7 | `No-Large-Piercing-v1.0.zip` | **No Large Piercing** | **优化** | 大型穿刺命中特效 → `0` (`None`)。**与 #8 二选一** |
 | 8 | `No-Large-Piercing-Medium-v1.0.zip` | **No Large Piercing (Medium)** | **优化** | 大型穿刺命中特效 → `2` (`PiercingMedium`)。**与 #7 二选一** |
 
 > 三对二选一（**#3/#4**、**#5/#6**、**#7/#8**）之外，其余 mod 可任意组合同时使用。
+
+> **Tag 说明**：目前只设了 **`优化` / `Optimization`** 一个标签，仅包含 **#7 / #8**（No Large Piercing 两版）。其余 mod 暂不归类。
 
 ## 🔧 各个 mod 详细说明
 

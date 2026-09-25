@@ -4,16 +4,18 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 
 | Mod (name shown in mod managers) | Tag | What it does |
 |---|---|---|
-| **AC-8 Cut-Content 75rnd Backpack** | Cut-content | Swaps the AC-8 autocannon's rack backpack for the **cut-content 75-round spare backpack** (vanilla: 50 rounds) |
-| **Stronger Kinetic Guard Dog** | Buff | Swaps the guard dog's mounted weapon for the **SEAF MG-43** (kinetic), for stronger firepower |
-| **TD-110 Co-Op** | Gameplay | Widens the TD-110 storm tank's laser designator yaw to **±180°**, and swaps the two mount slots (gunner ← smoke launcher, driver ← laser designator) |
-| **Busier TD-110 Driver** | Gameplay | Alternative to TD-110 Co-Op: replaces the TD-110 driver-slot **smoke launcher** with a **manually-operated heavy MG turret** (pick one of the two — they touch the same slot) |
-| **More Balanced Exosuit - Patriot** | Balance | Exosuit arm swap (see below), **plus**: carrying the **Patriot** exosuit stratagem also gives you the **Emancipator** one — and **both exosuits get 1 use / 0 cooldown** |
-| **More Balanced Exosuit - Emancipator** | Balance | Same arm swap, **plus**: carrying the **Emancipator** stratagem also gives you the **Patriot** one — **both exosuits get 1 use / 0 cooldown** (pick **one** of these two — running both crashes the stratagem list) |
+| **AC-8 Cut-Content 75rnd Backpack** | — | Swaps the AC-8 autocannon's rack backpack for the **cut-content 75-round spare backpack** (vanilla: 50 rounds) |
+| **Stronger Kinetic Guard Dog** | — | Swaps the guard dog's mounted weapon for the **SEAF MG-43** (kinetic), for stronger firepower |
+| **TD-110 Co-Op** | — | Widens the TD-110 storm tank's laser designator yaw to **±180°**, and swaps the two mount slots (gunner ← smoke launcher, driver ← laser designator) |
+| **Busier TD-110 Driver** | — | Alternative to TD-110 Co-Op: replaces the TD-110 driver-slot **smoke launcher** with a **manually-operated heavy MG turret** (pick one of the two — they touch the same slot) |
+| **More Balanced Exosuit - Patriot** | — | Exosuit arm swap (see below), **plus**: carrying the **Patriot** exosuit stratagem also gives you the **Emancipator** one — and **both exosuits get 1 use / 0 cooldown** |
+| **More Balanced Exosuit - Emancipator** | — | Same arm swap, **plus**: carrying the **Emancipator** stratagem also gives you the **Patriot** one — **both exosuits get 1 use / 0 cooldown** (pick **one** of these two — running both crashes the stratagem list) |
 | **No Large Piercing** | **Optimization** | Rewrites every **large-piercing hit-effect tier** (`HitEffectDamageType` `3` `PiercingLarge` / `4` `PiercingLargeHEAT`) to **`0` `None`** — no large-piercing impact FX at all |
 | **No Large Piercing (Medium)** | **Optimization** | Same rewrite, but to **`2` `PiercingMedium`** — downgrades the tier instead of removing it (**pick one** of these two) |
 
 Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in each subfolder.
+
+> **Tags.** `Optimization` is the only tag so far — it currently holds the two **No Large Piercing** variants. Other mods are untagged on purpose.
 
 > 中文说明见下方。**当前版本 v1.3（模组合集，8 个 mod）**：前四个 + 外骨骼 v1.1 + **No Large Piercing 两版**均已实机验证；两对二选一（TD-110 Co-Op / 更忙的驾驶员、外骨骼爱国者版 / 解放者版）、以及 **No Large Piercing / 中口径版** 见下表。
 
@@ -23,14 +25,17 @@ Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in eac
 
 | Mod（管理器内显示的英文名） | 中文名 | 分类 | 作用 |
 |---|---|---|---|
-| **AC-8 Cut-Content 75rnd Backpack** | **AC-8 废案 75 发备弹背包（替换原 50 发背包）** | 内容恢复 | 把战备「AC-8 机炮」包架上的背包，从原版 50 发备弹换成**废案版本的 75 发备弹背包** |
-| **Stronger Kinetic Guard Dog** | **更强的实弹狗** | 强化 | 把机枪犬 `drone_mg` 挂载的武器换成 **SEAF MG-43（实弹）**，火力更强 |
-| **TD-110 Co-Op** | **更强调合作的 TD-110** | 玩法 | 把暴风漩涡坦克（TD-110）激光指示器的水平射界从 ±20° 放宽到 **±180°**，并把两个挂载位**按位置对调**：炮手位换成烟雾弹、驾驶员位换成激光指示器 |
-| **Busier TD-110 Driver** | **更忙的 TD-110 驾驶员** | 玩法 | TD-110 Co-Op 的**替代方案**：把驾驶员位（`+48`）的**烟雾弹发生器**换成**手操重机枪炮台**（可被驾驶员操作的实弹炮台）。与 TD-110 Co-Op **二选一** |
-| **More Balanced Exosuit - Patriot** | **更均衡的爱国者/解放者外骨骼 · 携带爱国者版** | 平衡 | **携带爱国者外骨骼战备时，额外携带解放者外骨骼战备**；另有挂载对调 + 两台外骨骼可用次数 1、冷却 0 |
-| **More Balanced Exosuit - Emancipator** | **更均衡的爱国者/解放者外骨骼 · 携带解放者版** | 平衡 | **携带解放者外骨骼战备时，额外携带爱国者外骨骼战备**；另有挂载对调 + 两台外骨骼可用次数 1、冷却 0。与上一行**二选一**（同时装会战备套娃崩溃） |
+| **AC-8 Cut-Content 75rnd Backpack** | **AC-8 废案 75 发备弹背包（替换原 50 发背包）** | — | 把战备「AC-8 机炮」包架上的背包，从原版 50 发备弹换成**废案版本的 75 发备弹背包** |
+| **Stronger Kinetic Guard Dog** | **更强的实弹狗** | — | 把机枪犬 `drone_mg` 挂载的武器换成 **SEAF MG-43（实弹）**，火力更强 |
+| **TD-110 Co-Op** | **更强调合作的 TD-110** | — | 把暴风漩涡坦克（TD-110）激光指示器的水平射界从 ±20° 放宽到 **±180°**，并把两个挂载位**按位置对调**：炮手位换成烟雾弹、驾驶员位换成激光指示器 |
+| **Busier TD-110 Driver** | **更忙的 TD-110 驾驶员** | — | TD-110 Co-Op 的**替代方案**：把驾驶员位（`+48`）的**烟雾弹发生器**换成**手操重机枪炮台**（可被驾驶员操作的实弹炮台）。与 TD-110 Co-Op **二选一** |
+| **More Balanced Exosuit - Patriot** | **更均衡的爱国者/解放者外骨骼 · 携带爱国者版** | — | **携带爱国者外骨骼战备时，额外携带解放者外骨骼战备**；另有挂载对调 + 两台外骨骼可用次数 1、冷却 0 |
+| **More Balanced Exosuit - Emancipator** | **更均衡的爱国者/解放者外骨骼 · 携带解放者版** | — | **携带解放者外骨骼战备时，额外携带爱国者外骨骼战备**；另有挂载对调 + 两台外骨骼可用次数 1、冷却 0。与上一行**二选一**（同时装会战备套娃崩溃） |
 | **No Large Piercing** | **没有大型穿刺** | **优化** | 把数据表里所有**大型穿刺命中特效档**（`HitEffectDamageType` = `3` `PiercingLarge` / `4` `PiercingLargeHEAT`）改写为 **`0` `None`** —— 完全不再播放大型穿刺命中特效 |
 | **No Large Piercing (Medium)** | **没有大型穿刺（中口径版）** | **优化** | 同样的改写，但目标值改为 **`2` `PiercingMedium`** —— 降档而不是移除。与上一行**二选一** |
+
+> **分类（Tags）**：目前只设了「**优化**」一个标签，里面只有 **No Large Piercing** 两个版本（改大型穿刺命中特效）。
+> 其余 mod 暂不归类。
 
 > 命名说明：mod 管理器会把 manifest 里的 `Name` 当文件夹名用，因此包内使用**纯 ASCII 名**（避免导入时出现"目标名/目录名或卷标语法不正确"）；中文名见上表。
 
