@@ -88,10 +88,10 @@ drifted between game versions.
 * Covers the **AC-8 Autocannon, GR-8 Recoilless Rifle, EAT-17, EAT-411, RL-77 Airburst,
   E/AT-12 Anti-Tank Emplacement, EXO-45 exosuit missiles, MG-206, R-63 Diligence, P-2 / P-35
   sidearms**, plus **bot rockets / artillery / tank guns, Illuminate plasma and beams, Terminid
-  acid**, and **Orbital / Eagle stratagems** — full 106-entry list in `INTRO.md`.
+  acid**, and **Orbital / Eagle stratagems** — full 106-entry list in [INTRO.md](https://github.com/junze0910/junze-hd2-lua-mod/blob/main/no-large-piercing/INTRO.md).
   涉及 **AC-8 机炮、GR-8 无后坐力炮、EAT-17、EAT-411、RL-77 空爆、E/AT-12 反坦克炮台、
   EXO-45 外骨骼导弹、MG-206、R-63 勤勉、P-2 / P-35 手枪**，以及**机器人各型火箭弹 / 火炮 /
-  坦克炮、光能族等离子与光束、虫族酸液、轨道与飞鹰系战备**（完整 106 条清单见 `INTRO.md`）。
+  坦克炮、光能族等离子与光束、虫族酸液、轨道与飞鹰系战备**（完整 106 条清单见 [INTRO.md](https://github.com/junze0910/junze-hd2-lua-mod/blob/main/no-large-piercing/INTRO.md)）。
 
 * **Two mutually exclusive variants.** Enabling both makes the second one print a notice and exit
   automatically — you cannot accidentally run them together.

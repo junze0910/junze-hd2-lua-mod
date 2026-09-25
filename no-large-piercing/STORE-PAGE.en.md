@@ -55,7 +55,7 @@ useful for confirming the enum has not drifted between game versions).
 * Covers the **AC-8 Autocannon, GR-8 Recoilless Rifle, EAT-17, EAT-411, RL-77 Airburst,
   E/AT-12 Anti-Tank Emplacement, EXO-45 exosuit missiles, MG-206, R-63 Diligence, P-2 / P-35
   sidearms**, plus **bot rockets / artillery / tank guns, Illuminate plasma and beams, Terminid
-  acid**, and **Orbital / Eagle stratagems** — full 106-entry list in `INTRO.md`.
+  acid**, and **Orbital / Eagle stratagems** — full 106-entry list in [INTRO.md](https://github.com/junze0910/junze-hd2-lua-mod/blob/main/no-large-piercing/INTRO.md).
 * **Two mutually exclusive variants.** Enabling both makes the second one print a notice and exit
   automatically — you cannot accidentally run them together.
 * **Version-resilient by design.** Validation deliberately does **not** depend on record indices or
