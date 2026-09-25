@@ -1,72 +1,51 @@
-# v1.3 — 模组合集（8 个 mod）
+# v1.3 — No Large Piercing（优化类，**增量发布**）
 
-> GitHub Release 用 tag **`v1.3`**，附件是全部 8 个 mod 的包 + `SHA256SUMS.txt`。
-> 上一版 `v1.2.1` 有 6 个 mod；本版**新增 `No Large Piercing` 两版**（优化类）。
+> GitHub Release 用 tag **`v1.3`**，**附件只有优化类的 2 个包 + `SHA256SUMS.txt`**（不重复打包其他 mod）。
+> 其余 6 个 mod 请到上一版合集 **[`v1.2.1`](https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.2.1)** 下载。
 
 **日期**：2026-09-25 ～ **验证环境**：Helldivers 2 `1.8.45850.0` + Bingus Shared Loader **v16（API 1）**
 
-## 🆕 本次新增：No Large Piercing（没有大型穿刺）· 优化类
+## 📦 本版内容（2 个包）
 
-把《绝地潜兵2》里**大型穿刺类命中特效**从数据表中整体去掉。**纯视觉档位改动，不碰任何伤害数值。**
-
-| 包 | 管理器内名称 | 改写结果 |
-|---|---|---|
-| `No-Large-Piercing-v1.0.zip` | **No Large Piercing** | `HitEffectDamageType` `3`/`4` → **`0` (`None`)**，完全不播大型穿刺特效 |
-| `No-Large-Piercing-Medium-v1.0.zip` | **No Large Piercing (Medium)** | 同样改写 → **`2` (`PiercingMedium`)**，降档为中口径，保留命中反馈 |
+| 包 | 管理器内名称 | Tag | 作用 |
+|---|---|---|---|
+| `No-Large-Piercing-v1.0.zip` | **No Large Piercing** | **优化** | 大型穿刺命中特效（`HitEffectDamageType` `3` `PiercingLarge` / `4` `PiercingLargeHEAT`）→ **`0` (`None`)**，完全不再播放 |
+| `No-Large-Piercing-Medium-v1.0.zip` | **No Large Piercing (Medium)** | **优化** | 同样改写 → **`2` (`PiercingMedium`)**，降档为中口径，保留命中反馈 |
 
 > 两版**二选一**（改的是同一批字段）。同时启用时后加载的那个会打印提示并自动退出。
+> **`优化` / `Optimization` 是目前唯一的 tag**，只包含这两个 mod；其余 mod 暂不归类。
 
-**改了什么**
+## 🆕 改动面
+
+把《绝地潜兵2》里**大型穿刺类命中特效**从数据表中整体去掉。**纯视觉档位改动，不涉及任何伤害数值。**
 
 | 表 | 字段（记录内偏移） | 记录尺寸 | 游戏内条数 | 被改条目 |
 |---|---|---:|---:|---:|
 | `ProjectileSettings`（直击 / 弹道） | `+232` `effect_damage_type` | 272 B | 350 | **102**（`3`×90 + `4`×12） |
 | `ExplosionSettings`（爆炸） | `+76` `hit_effect_damage_type` | 152 B | 422 | **4**（`3`×4） |
 
-涉及 **AC-8 机炮、GR-8 无后坐力炮、EAT-17 次抛、EAT-411 荡平者、RL-77 空爆、E/AT-12 反坦克炮台、EXO-45 外骨骼导弹、MG-206 重机枪、R-63 勤勉、P-2/P-35 手枪**，以及**机器人各型火箭弹 / 火炮 / 坦克炮、光能族等离子与光束、虫族酸液、轨道与飞鹰系战备**等。完整清单（含枚举编号与名称）见 [`no-large-piercing/INTRO.md`](no-large-piercing/INTRO.md)。
+涉及 **AC-8 机炮、GR-8 无后坐力炮、EAT-17 次抛、EAT-411 荡平者、RL-77 空爆、E/AT-12 反坦克炮台、EXO-45 外骨骼导弹、MG-206 重机枪、R-63 勤勉、P-2/P-35 手枪**，以及**机器人各型火箭弹 / 火炮 / 坦克炮、光能族等离子与光束、虫族酸液、轨道与飞鹰系战备**等。完整清单（含枚举编号与名称）见 [`no-large-piercing/INTRO.md`](https://github.com/junze0910/junze-hd2-lua-mod/blob/main/no-large-piercing/INTRO.md)。
 
-**原理**：两张设置表都是 LDLD 数据块（`+0` 魔数、`+8` 类型哈希、`+32` 条数、`+40` 记录数组）。运行时按 `LDLD + 版本 + 类型哈希` 签名扫描定位 → 内容自洽校验 → 逐条 `VirtualProtect` 写入 4 字节 → **整块回读逐条复核**；每 10 秒复查、每 5 分钟重新枚举内存区域并全量重扫（内存里可能有多份副本，全部改写）。
+## 🔧 原理
+
+两张设置表都是 **LDLD 数据块**（`+0` 魔数、`+8` 类型哈希、`+32` 条数、`+40` 记录数组）。运行时流程：
+
+1. 时间切片扫描内存，按 `LDLD + 版本 + 类型哈希` 签名定位两张表（块间 2 KB 重叠，防止表跨扫描块边界漏检）
+2. 定位记录区（描述符相对偏移 / 绝对指针 / 固定 `+40` 三种布局都试，用内容裁决）
+3. **内容自洽校验** —— 枚举值域 + 取值多样性，**不依赖记录下标**
+4. 逐条 `VirtualProtect` 放开只读页 → 写 4 字节 → 恢复保护属性
+5. **整块回读逐条复核**，不符则拒绝并记日志
+6. 每 ~10 秒复查；每 ~5 分钟重新枚举内存区域并全量重扫（内存里可能有多份副本，全部改写）
 
 **实机验证**：2026-09-25，两张表均 `已回读验证通过`，`3`/`4` 档计数归零。
 
 **日志**：`%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\NoLargePiercing.log`
 
-**⚠ 与上一版相比的一个技术变更（值得记录）**：第一版把「记录下标 + 枚举值」当指纹，实机被拒写。排查后确认：官方在版本更新时会**重排记录在表里的排列顺序**，且会**在末尾追加**新枚举编号（弹头 `344..350`、爆炸 `416..422`），但**已有编号不顺延**。因此本 mod 的校验**完全不依赖记录下标**，只检查内容形态（枚举值域 + 取值多样性）；记录尺寸或字段偏移一旦变化仍会被拦下。详见 [`no-large-piercing/INTRO.md` §四](no-large-piercing/INTRO.md)。
+## ⚠ 关于"记录下标不能当指纹"（本版踩坑记录）
 
-## 📦 合集内容（8 个 mod）
+第一版把「记录下标 + 枚举值」当指纹，实机被拒写。排查后确认：官方在版本更新时会**重排记录在表里的排列顺序**，且会**在末尾追加**新枚举编号（弹头 `344..350`、爆炸 `416..422`），但**已有编号不顺延**。
 
-| # | 包 | 管理器内名称 | Tag | 作用 |
-|---|---|---|---|---|
-| 1 | `AC8-Rack-Backpack-v1.0.zip` | **AC-8 Cut-Content 75rnd Backpack** | — | AC-8 机炮包架的背包：原版 **50 发** → 废案版本 **75 发** |
-| 2 | `Guard-Dog-MG43-v1.0.zip` | **Stronger Kinetic Guard Dog** | — | 机枪犬 `drone_mg` 挂载武器 → **SEAF MG-43（实弹）** |
-| 3 | `TD-110-Co-Op-v1.0.zip` | **TD-110 Co-Op** | — | TD-110 激光指示器射界 **±20° → ±180°**；炮手位 `+24` → 烟雾弹、驾驶员位 `+48` → 激光指示器。**与 #4 二选一** |
-| 4 | `TD-110-Busier-Driver-v1.0.zip` | **Busier TD-110 Driver** | — | TD-110 驾驶员位 `+48` 烟雾弹 → **手操重机枪炮台**。**与 #3 二选一** |
-| 5 | `More-Balanced-Exosuit-Patriot-v1.1.zip` | **More Balanced Exosuit - Patriot** | — | 携带爱国者战备 → 额外携带解放者战备；挂载对调 + 两台外骨骼可用次数 1、冷却 0。**与 #6 二选一** |
-| 6 | `More-Balanced-Exosuit-Emancipator-v1.1.zip` | **More Balanced Exosuit - Emancipator** | — | 携带解放者战备 → 额外携带爱国者战备；其余同 #5。**与 #5 二选一** |
-| 7 | `No-Large-Piercing-v1.0.zip` | **No Large Piercing** | **优化** | 大型穿刺命中特效 → `0` (`None`)。**与 #8 二选一** |
-| 8 | `No-Large-Piercing-Medium-v1.0.zip` | **No Large Piercing (Medium)** | **优化** | 大型穿刺命中特效 → `2` (`PiercingMedium`)。**与 #7 二选一** |
-
-> 三对二选一（**#3/#4**、**#5/#6**、**#7/#8**）之外，其余 mod 可任意组合同时使用。
-
-> **Tag 说明**：目前只设了 **`优化` / `Optimization`** 一个标签，仅包含 **#7 / #8**（No Large Piercing 两版）。其余 mod 暂不归类。
-
-## 🔧 各个 mod 详细说明
-
-### 1. AC-8 Cut-Content 75rnd Backpack（AC-8 废案 75 发备弹背包）
-改写 `MountComponentData` 里 AC-8 机炮包架的背包条目：原版 50 发备弹 → 废案版本 **75 发备弹**。
-定位用背包自身的资源哈希 + 「命中点前后必须是机炮本体」的内容校验，不依赖表布局。
-
-### 2. Stronger Kinetic Guard Dog（更强的实弹狗）
-把机枪犬 `drone_mg` 挂载的武器换成 **SEAF MG-43**（实弹），火力与手感更强。
-
-### 3. TD-110 Co-Op（更强调合作的 TD-110）
-两件事：① 激光指示器水平射界 **±20° → ±180°**；② 两个挂载位按位置对调（炮手 `+24` → 烟雾弹发射器、驾驶员 `+48` → 激光指示器），`node` 等其它字段一律不动。
-⚠ **时序**：`MountComponentData` 只在生成载具时读一次 —— 进任务后先等 `TankStormCoop.log` 出现
-`挂载补丁已就绪：现在可以召唤 / 重新召唤载具了`，**再**召唤坦克（射界是实时读的，不用等）。
-
-### 4. Busier TD-110 Driver（更忙的 TD-110 驾驶员）
-TD-110 Co-Op 的替代方案：只把驾驶员位 `+48` 的烟雾弹发生器换成**手操重机枪炮台**（`14005565984326167830`），
-不动炮手位、不调射界。**与 TD-110 Co-Op 二选一**（同一个槽）。
+因此本 mod 的校验**完全不依赖记录下标**，只检查内容形态；记录尺寸或字段偏移一旦变化仍会被拦下。详细排查过程见 [`no-large-piercing/INTRO.md` §四](https://github.com/junze0910/junze-hd2-lua-mod/blob/main/no-large-piercing/INTRO.md)。
 
 # v1.2.1 — 模组合集（6 个 mod）
 

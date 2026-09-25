@@ -13,11 +13,11 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 | **No Large Piercing** | **Optimization** | Rewrites every **large-piercing hit-effect tier** (`HitEffectDamageType` `3` `PiercingLarge` / `4` `PiercingLargeHEAT`) to **`0` `None`** — no large-piercing impact FX at all |
 | **No Large Piercing (Medium)** | **Optimization** | Same rewrite, but to **`2` `PiercingMedium`** — downgrades the tier instead of removing it (**pick one** of these two) |
 
-Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in each subfolder.
+Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-mod/tree/main/dist) (prebuilt zip) · source code in each subfolder.
 
 > **Tags.** `Optimization` is the only tag so far — it currently holds the two **No Large Piercing** variants. Other mods are untagged on purpose.
 
-> 中文说明见下方。**当前版本 v1.3（模组合集，8 个 mod）**：前四个 + 外骨骼 v1.1 + **No Large Piercing 两版**均已实机验证；两对二选一（TD-110 Co-Op / 更忙的驾驶员、外骨骼爱国者版 / 解放者版）、以及 **No Large Piercing / 中口径版** 见下表。
+> 中文说明见下方。**当前版本 v1.3 —— 优化类增量发布**：只含 **No Large Piercing** 两版（大型穿刺命中特效 → `0` / `2`）；其余 6 个 mod 见上一版合集 [`v1.2.1`](https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.2.1)。
 
 《绝地潜兵 2》(Helldivers 2) 自研 Lua 内存补丁合集。**不修改任何游戏文件**，只在游戏运行时改写内存里的数据表。
 
@@ -48,7 +48,7 @@ Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in eac
 
 ## 安装
 
-1. 从 [`dist/`](dist/) 目录下载 zip（也可在 [Releases](../../releases) 里找到同一份）：
+1. 从 [`dist/`](https://github.com/junze0910/junze-hd2-lua-mod/tree/main/dist) 目录下载 zip（也可在 [Releases](https://github.com/junze0910/junze-hd2-lua-mod/releases) 里找到同一份）：
 
    | 文件 | Mod |
    |---|---|
