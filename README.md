@@ -13,7 +13,7 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 
 Ready-to-install packages: [`dist/`](dist/) (prebuilt zip) · source code in each subfolder.
 
-> 中文说明见下方。**当前版本 v1.2.1**：四个老 mod 已实机验证；「更均衡的爱国者/解放者外骨骼」两版见下方说明。
+> 中文说明见下方。**当前版本 v1.2.1（模组合集，6 个 mod）**：四个老 mod 已实机验证；「更均衡的爱国者/解放者外骨骼」两版见下方说明。
 
 《绝地潜兵 2》(Helldivers 2) 自研 Lua 内存补丁合集。**不修改任何游戏文件**，只在游戏运行时改写内存里的数据表。
 
