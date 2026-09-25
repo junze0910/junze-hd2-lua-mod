@@ -134,6 +134,11 @@ drifted between game versions.
 * **xypwn** — for [filediver](https://github.com/xypwn/filediver). The plaintext `datalibrary` it ships,
   together with the game's own typelib, is where the field offsets and record sizes here were derived from.
   其内嵌的明文 `datalibrary` 加上游戏自带 typelib，是本文所有字段偏移与记录尺寸的来源。
+* **Darctor** — for [Helldivers2_RawData](https://github.com/Darctor/Helldivers2_RawData). Its in-memory dump of the game's settings
+  tables and its enum name tables (`HitEffectDamageType`, `ProjectileType`, `ExplosionType`) are what the
+  field semantics and tier names in this mod are based on.
+  其游戏设置表内存 dump 与枚举名表（`HitEffectDamageType` / `ProjectileType` / `ExplosionType`），
+  是本文字段语义与档位名称的依据。
 * **shalzuth** — for [HelldiversData](https://github.com/shalzuth/HelldiversData), the original community
   effort to dump these tables. 社区最早的数据表导出工作。
 * **noro** — for the in-game item ID tables used to put a name on every affected entry.

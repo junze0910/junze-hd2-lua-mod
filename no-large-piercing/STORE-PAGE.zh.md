@@ -69,5 +69,6 @@
 
 * **Bingus** —— Shared Loader 与 `.patch_N` addon 工具链；
 * **xypwn** —— [filediver](https://github.com/xypwn/filediver)，其内嵌的明文 `datalibrary` 加上游戏自带 typelib，是本文所有字段偏移与记录尺寸的来源；
+* **Darctor** —— [Helldivers2_RawData](https://github.com/Darctor/Helldivers2_RawData)，提供了游戏设置表的内存 dump 与枚举名表（`HitEffectDamageType` / `ProjectileType` / `ExplosionType`），本文的字段语义与档位名称依据于此；
 * **shalzuth** —— [HelldiversData](https://github.com/shalzuth/HelldiversData)，社区最早的数据表导出工作；
 * **noro** —— 游戏内提取的道具 ID 表，用于给每条受影响的条目配上名称。

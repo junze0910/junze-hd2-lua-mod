@@ -227,7 +227,7 @@ ProjectileSettings @0x...：基线指纹不符（记录 0 期望 282/228，实�
 | 项 | 来源 |
 |---|---|
 | 字段偏移 / 记录尺寸 | 游戏自带 **typelib**（经 `filediver` 的 `datalibrary` 导出，1177 个类型的成员偏移） |
-| 字段语义 / 枚举名 | 游戏内枚举表 `Data/enums/HitEffectDamageType.txt` |
+| 字段语义 / 枚举名 | [Helldivers2_RawData](https://github.com/Darctor/Helldivers2_RawData) 的 `Data/enums/HitEffectDamageType.txt` 等枚举名表 |
 | 条目名称 | 游戏内提取的 ID 表（`弹头ID` / `爆炸ID` / `伤害ID`） |
 
 偏移与尺寸用**明文数据表逐条比对**验证：

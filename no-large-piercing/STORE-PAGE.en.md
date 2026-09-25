@@ -80,6 +80,9 @@ useful for confirming the enum has not drifted between game versions).
 * **Bingus** — for Shared Loader and the `.patch_N` addon tooling that makes patches like this possible.
 * **xypwn** — for [filediver](https://github.com/xypwn/filediver). The plaintext `datalibrary` it ships,
   together with the game's own typelib, is where the field offsets and record sizes here were derived from.
+* **Darctor** — for [Helldivers2_RawData](https://github.com/Darctor/Helldivers2_RawData). Its in-memory dump of the game's settings
+  tables and its enum name tables (`HitEffectDamageType`, `ProjectileType`, `ExplosionType`) are what the
+  field semantics and tier names in this mod are based on.
 * **shalzuth** — for [HelldiversData](https://github.com/shalzuth/HelldiversData), the original community
   effort to dump these tables.
 * **noro** — for the in-game item ID tables used to put a name on every affected entry.
