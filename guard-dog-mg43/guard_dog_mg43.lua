@@ -132,8 +132,10 @@ local ok, api = pcall(function()
       if not size or size <= 0 then break end
       local protect   = tonumber(info[0].Protect)
       local committed = tonumber(info[0].State) == 0x1000
+      -- ★ 先剥掉修饰位(0x100 已单独判)再比较：全等比较会漏掉带修饰位的页
+      local proto = bit.band(protect, 0xFF)
       local readable  = bit.band(protect, 0x100) == 0
-        and (protect == 0x04 or protect == 0x20 or protect == 0x40 or protect == 0x02 or protect == 0x80 or protect == 0x08)
+        and (proto == 0x04 or proto == 0x20 or proto == 0x40 or proto == 0x02 or proto == 0x80 or proto == 0x08)
       if committed and readable then
         result[#result + 1] = { base = base, size = size }
       end
@@ -534,7 +536,11 @@ local function slice()
       local buf = api.read(region.base + state.region_offset, amount)
       state.scanned = state.scanned + amount
       if buf then
-        pcall(census_scan, buf, region.base + state.region_offset)
+        -- census 只用于「找不到表」时的诊断；已生效后 / 维护扫描时不再跑，
+        --   否则每个 chunk 都要把整块内存再搜一遍（约 +33% 扫描成本）
+        if state.phase ~= 'patched' and state.scan_kind == 'full' then
+          pcall(census_scan, buf, region.base + state.region_offset)
+        end
         local window_base = region.base + state.region_offset - #state.previous
         local window = state.previous .. buf
         local from = 1

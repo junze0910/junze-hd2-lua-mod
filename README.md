@@ -17,7 +17,10 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 
 > **Tags.** `Optimization` is the only tag so far — it currently holds the two **No Large Piercing** variants. Other mods are untagged on purpose.
 
-> 中文说明见下方。**当前版本 v1.3 —— 优化类增量发布**：只含 **No Large Piercing** 两版（大型穿刺命中特效 → `0` / `2`）；其余 6 个 mod 见上一版合集 [`v1.2.1`](https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.2.1)。
+> 中文说明见下方。本仓库分**两条发布线**：【**合集版**】带其余 6 个 mod，【**优化类增量**】只带 **No Large Piercing** 两版。
+> **本次优化类增量**：**No Large Piercing** 两版 —— 确认生效后**进入静默**（停止一切扫描），保留 108 个地址 × 4 字节的复查；静默期每 30 秒只扫「热区」（≈全量的 1%）；单帧扫描预算 8ms → 2ms、复查由整表重读改为地址级；诊断转储默认关闭。
+> **本次合集版更新**（随合集版 Release 发布）：census 普查改为只在「还没找到表」时跑（约 −33% 扫描成本）、周期全量兜底改退避、修正 `PAGE_WRITECOPY` 区段过滤；**Busier TD-110 Driver** 另外把手操重机枪炮台的弹药量改为 **1000 发/弹匣**（原版 500）。
+> 上一版合集见 [`v1.2.1`](https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.2.1)，上一版优化类增量见 [`v1.3`](https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.3)。
 
 《绝地潜兵 2》(Helldivers 2) 自研 Lua 内存补丁合集。**不修改任何游戏文件**，只在游戏运行时改写内存里的数据表。
 
@@ -52,18 +55,18 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 
    | 文件 | Mod |
    |---|---|
-   | `AC8-Rack-Backpack-v1.0.zip` | AC-8 废案 75 发备弹背包 |
-   | `Guard-Dog-MG43-v1.0.zip` | 更强的实弹狗 |
-   | `TD-110-Co-Op-v1.0.zip` | 更强调合作的 TD-110 |
-   | `TD-110-Busier-Driver-v1.0.zip` | 更忙的 TD-110 驾驶员（与上一个**二选一**） |
-   | `More-Balanced-Exosuit-Patriot-v1.1.zip` | 更均衡的外骨骼 · **携带爱国者版**（携带爱国者战备 → 额外携带解放者战备；可用次数 1、冷却 0） |
-   | `More-Balanced-Exosuit-Emancipator-v1.1.zip` | 更均衡的外骨骼 · **携带解放者版**（携带解放者战备 → 额外携带爱国者战备；可用次数 1、冷却 0）。与上一个**二选一** |
-    | `No-Large-Piercing-v1.0.zip` | 没有大型穿刺（大型穿刺档 → `0` None，完全不打） |
-    | `No-Large-Piercing-Medium-v1.0.zip` | 没有大型穿刺 · 中口径版（大型穿刺档 → `2` PiercingMedium）。与上一个**二选一** |
+   | `AC8-Rack-Backpack-v1.1.zip` | AC-8 废案 75 发备弹背包 |
+   | `Guard-Dog-MG43-v1.1.zip` | 更强的实弹狗 |
+   | `TD-110-Co-Op-v1.1.zip` | 更强调合作的 TD-110 |
+   | `TD-110-Busier-Driver-v1.2.zip` | 更忙的 TD-110 驾驶员（与上一个**二选一**） |
+   | `More-Balanced-Exosuit-Patriot-v1.2.zip` | 更均衡的外骨骼 · **携带爱国者版**（携带爱国者战备 → 额外携带解放者战备；可用次数 1、冷却 0） |
+   | `More-Balanced-Exosuit-Emancipator-v1.2.zip` | 更均衡的外骨骼 · **携带解放者版**（携带解放者战备 → 额外携带爱国者战备；可用次数 1、冷却 0）。与上一个**二选一** |
+    | `No-Large-Piercing-v1.4.zip` | 没有大型穿刺（大型穿刺档 → `0` None，完全不打） |
+    | `No-Large-Piercing-Medium-v1.4.zip` | 没有大型穿刺 · 中口径版（大型穿刺档 → `2` PiercingMedium）。与上一个**二选一** |
 2. 用 mod 管理器导入并启用（**不要手动把 `Addon/` 拷进 `data/`** —— 多个 addon 的包内文件名相同，会互相覆盖）；
    * 本次版本的完整说明（含 TD-110 Co-Op 的时序规则）见 [`RELEASE-NOTES.md`](RELEASE-NOTES.md)；
    * 下载包校验：`dist/SHA256SUMS.txt`——
-     `cd dist; certutil -hashfile TD-110-Co-Op-v1.0.zip SHA256`（Git Bash：`sha256sum -c SHA256SUMS.txt`）；
+     `cd dist; certutil -hashfile TD-110-Co-Op-v1.1.zip SHA256`（Git Bash：`sha256sum -c SHA256SUMS.txt`）；
 3. 进游戏。数据表是在任务里按需加载的，一般进图后约 1 分钟生效。
    * **装 `TD-110 Co-Op` 时有一条额外规则**：挂载表（`MountComponentData`）是**生成载具时读一次**的静态配置，
      补丁必须**早于召唤载具** —— 进任务后先等 `TankStormCoop.log` 出现

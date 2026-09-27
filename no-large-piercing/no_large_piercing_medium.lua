@@ -42,8 +42,16 @@ end
 local state = {
   frame = 0, status = nil, rounds = 0, errs = 0,
   changed = 0, wrote = 0,
-  patched = {},          -- [magic] = 表定义
+  patched = {},          -- [magic] = 表定义（含 count）
   dumped  = {},          -- [magic] = DIAG 已导出
+  verified = {},         -- [t]     = 该表已通过一次全量自洽校验
+  slots   = {},          -- [addr]  = { expect, magic, t } 已写入的字段地址
+  -- 调度
+  all_done = false, done_armed = false,
+  hot = {}, hot_ticks = 0,          -- [区段 base] = { base, size }：曾经出现过表的区段
+  full_interval = 0, full_frame = 0, next_scan_frame = 0,
+  regions = nil, region_index = 1, region_offset = 0, prev = '',
+  scan_kind = nil, round_hits = 0, empty_rounds = 0,
 }
 rawset(_G, MOD, state)
 rawset(_G, 'HD2_NoLargePiercing_Owner', MOD)
@@ -156,10 +164,12 @@ local ok, api = pcall(function()
       if not size or size <= 0 then break end
       local protect   = tonumber(info[0].Protect)
       local committed = tonumber(info[0].State) == 0x1000
-      -- 只要"已提交 + 可读"（不要求可写：目标页通常是只读的，写入时再 unprotect）
+      -- ★ 必须先剥掉修饰位再比较；且必须包含 PAGE_WRITECOPY(0x08)
+      --   （项目 STATUS.md「已确认的环境事实」#3：区域枚举必须含 0x08）
+      local proto = bit.band(protect, 0xFF)
       local readable = bit.band(protect, 0x100) == 0
-        and (protect == 0x02 or protect == 0x04 or protect == 0x20
-          or protect == 0x40 or protect == 0x80)
+        and (proto == 0x02 or proto == 0x04 or proto == 0x08 or proto == 0x20
+          or proto == 0x40 or proto == 0x80)
       if committed and readable then
         result[#result + 1] = { base = base, size = size }
       end
@@ -184,8 +194,12 @@ end
 -- ===========================================================================
 -- 小工具
 -- ===========================================================================
+-- 热路径：把常用全局本地化（扫描/校验每帧要调几千次）
+local sbyte, sfind, ssub = string.byte, string.find, string.sub
+local mmin, mfloor = math.min, math.floor
+
 local function u32_at(bytes, offset)
-  local a, b, c, d = bytes:byte(offset + 1, offset + 4)
+  local a, b, c, d = sbyte(bytes, offset + 1, offset + 4)
   if not d then return nil end
   return a + b * 256 + c * 65536 + d * 16777216
 end
@@ -216,11 +230,38 @@ end
 --   base 指纹一律【不含被改字段】，这样写入后仍然成立，复查才有意义。
 -- ===========================================================================
 -- 扫描/复查节奏
-local SCAN_CHUNK        = 1024 * 1024   -- 每次读 1 MB
+-- ★ 与同项目其它 mod 对齐（tank_storm_coop / walker_loadout 都是 256KB + 2ms）。
+--   旧的 1MB / 8ms 在 60fps 下等于直接砍掉一半帧预算。
+local SCAN_CHUNK        = 256 * 1024    -- 常态每次读 256 KB（细粒度 → 每帧占用平滑）
+local SCAN_CHUNK_HURRY  = 1024 * 1024   -- 抢时间阶段用 1 MB（少一点每块的固定开销，
+                                        --   否则 256KB 块的固定成本会吃掉预算，找表慢一个量级）
 local SCAN_OVERLAP      = 2048          -- 相邻块重叠，防止表跨边界漏检
-local SCAN_BUDGET       = 0.008         -- 每帧最多 8ms CPU
-local RECHECK_EVERY     = 600           -- 约 10 秒复查一次
-local FULL_RESCAN_EVERY = 18000         -- 约 5 分钟重扫一次
+local SCAN_BUDGET       = 0.002         -- 常态：每帧最多 2 ms CPU
+local SCAN_BUDGET_HURRY = 0.010         -- 抢时间：还没打完时每帧 10 ms
+                                        --   实机 v1.3：6ms + 256KB 块 → 找表用了 3363 帧(≈56s)，
+                                        --   比旧版 8ms 的 327 帧慢一个量级。找表是一次性的、
+                                        --   稳态已归零，所以这里给足预算。
+local HURRY_ROUNDS      = 6             -- 前 6 轮按抢时间模式跑
+local RECHECK_EVERY     = 600           -- 约 10 秒复查一次（只读已写入的 4 字节地址）
+local MAINTAIN_FRAMES   = 600           -- 约 10 秒扫一次「已知表 ±32KB」观察窗口（约 290 KB/次）
+local FULL_RESCAN_EVERY = 10800         -- 兜底全量重扫基准：3 分钟
+local FULL_RESCAN_MAX   = 43200         -- 兜底全量重扫上限：12 分钟（连续无收获就翻倍退避）
+local BACKOFF           = { 2, 2, 4, 4, 8, 15, 30, 60, 120, 300 }  -- 空轮等待（秒）
+local WINDOW_MARGIN     = 32768         -- 观察窗口半径
+local DIAG              = false         -- 诊断转储开关（before/after.hex、DIAG.csv）
+-- ★ 静默：确认「注入已生效 + 稳定」之后彻底停止扫描。
+--   静默期只保留 slots 复查（108 个地址 × 4 字节 / 10 秒 ≈ 43 字节/秒），
+--   一旦复查发现任何异常就自动退出静默、恢复扫描 —— 所以静默不是"失联"。
+local QUIET_MODE            = true    -- false = 保持维护式扫描（观察窗口 + 兜底全量）
+local QUIET_AFTER_CHECKS    = 3       -- 连续 N 次复查无异常 → 判定稳定（约 30 秒）
+-- ★ 热区记忆：命中过的内存区段会被记住，静默期只重扫这些区段。
+--   实测（EffectGrade0.log）：原始副本在 0x2795C2F0004，之后 12 轮全量扫描里
+--   每一次都能在【完全不同的新地址】找到完整表 —— 全都落在 0x7C8D0000~0x7EE00000
+--   约 37 MB 的一段里。全量扫 4 GB 只为发现这些，代价 100 倍以上。
+--   热区自检 ≈ 37 MB / 次（约全量的 1%），30 秒一轮；再每 QUIET_FULL_EVERY 轮
+--   做一次真·全量兜底，防止表跑到从未出现过的区段。
+local QUIET_FALLBACK_FRAMES = 1800  -- 静默期热区自检周期（约 30 秒）；0 = 关闭（真静默）
+local QUIET_FULL_EVERY      = 40    -- 每 N 次热区自检做一次全量兜底（约 20 分钟）
 
 local MAGIC      = 'LDLD'
 local DESC_OFF   = 24      -- 16 字节数组描述符
@@ -283,27 +324,33 @@ end
 --   这里只检查"这些字段应该长什么样"：枚举值域 + 取值多样性。
 --   记录尺寸或字段偏移一旦变化，这几条会同时崩掉，照样拦得住。
 -- ===========================================================================
-local function verify_shape(t, data, count)
+-- sample = nil → 全量逐条校验；sample = N → 均匀抽样 N 条。
+--   本版本首次见到某张表时做全量；之后内存里冒出来的新副本只抽样
+--   （布局已被全量校验证明过，抽样足以发现记录尺寸/字段偏移变化）。
+local function verify_shape(t, data, count, sample)
+  local step = 1
+  if sample and count > sample then step = mfloor(count / sample) end
   local type_bad, aux_bad, eff_bad = 0, 0, 0
-  local seen, distinct = {}, 0
+  local seen, distinct, checked = {}, 0, 0
   local eff3, eff4 = 0, 0
-  for i = 0, count - 1 do
+  for i = 0, count - 1, step do
     local r = i * t.rec_size
     local ty  = u32_at(data, r + t.type_off)
     local aux = u32_at(data, r + t.aux_off)
     local ef  = u32_at(data, r + t.field_off)
+    checked = checked + 1
     if not ty  or ty  > 4095 then type_bad = type_bad + 1 end
     if not aux or aux > 4095 then aux_bad  = aux_bad  + 1 end
     if not ef  or ef  > 31   then eff_bad  = eff_bad  + 1 end
     if ty and ty > 0 and seen[ty] == nil then seen[ty] = true; distinct = distinct + 1 end
     if ef == 3 then eff3 = eff3 + 1 elseif ef == 4 then eff4 = eff4 + 1 end
   end
-  local tol = math.floor(count * 0.02)
-  if type_bad > tol then return false, ('type 越界 %d/%d'):format(type_bad, count) end
-  if aux_bad  > tol then return false, ('aux  越界 %d/%d'):format(aux_bad,  count) end
-  if eff_bad  > tol then return false, ('特效字段越界 %d/%d'):format(eff_bad, count) end
-  if distinct < count * 0.5 then return false, ('不同 type 太少 %d/%d'):format(distinct, count) end
-  return true, { eff3 = eff3, eff4 = eff4, distinct = distinct }
+  local tol = mfloor(checked * 0.02)
+  if type_bad > tol then return false, ('type 越界 %d/%d'):format(type_bad, checked) end
+  if aux_bad  > tol then return false, ('aux  越界 %d/%d'):format(aux_bad,  checked) end
+  if eff_bad  > tol then return false, ('特效字段越界 %d/%d'):format(eff_bad, checked) end
+  if distinct < checked * 0.5 then return false, ('不同 type 太少 %d/%d'):format(distinct, checked) end
+  return true, { eff3 = eff3, eff4 = eff4, distinct = distinct, checked = checked }
 end
 
 -- 诊断导出：把实际读到的整张表落盘，供离线核对
@@ -374,10 +421,57 @@ end
 -- ===========================================================================
 -- 写入
 -- ===========================================================================
+-- 统一的写入入口（unprotect → write → reprotect）
+local function write_bytes(address, bytes, size)
+  local old = api.unprotect(address, size)
+  if not old then return false end
+  local good = api.write(address, bytes)
+  api.reprotect(address, size, old)
+  return good
+end
+
+-- 记下这块表所在的内存区段（热区）——静默期只重扫这些区段
+local function note_hot(magic)
+  local regs = state.regions
+  if not regs then return end
+  for i = 1, #regs do
+    local r = regs[i]
+    if magic >= r.base and magic < r.base + r.size then
+      state.hot[r.base] = { base = r.base, size = r.size }
+      return
+    end
+  end
+end
+
+-- 两张目标表是否都已定位并生效
+local function resolved_tables()
+  local seen, n = {}, 0
+  for _, rec in pairs(state.patched) do
+    if not seen[rec.t] then seen[rec.t] = true; n = n + 1 end
+  end
+  return n
+end
+
+-- 重算 all_done；首次达标时预约「维护窗口 + 兜底全量」
+local function refresh_done()
+  local done = resolved_tables() >= #TABLES
+  state.all_done = done
+  if done and not state.done_armed then
+    state.done_armed  = true
+    state.full_interval = FULL_RESCAN_EVERY
+    state.full_frame    = state.frame + FULL_RESCAN_EVERY
+    state.next_scan_frame = state.frame + MAINTAIN_FRAMES
+  elseif not done then
+    state.done_armed = false
+  end
+  -- 有新发现/新写入 → 静默计时重新开始
+  state.stable_checks, state.quiet = 0, false
+end
+
 local function apply(magic, t)
-  -- 已处理过的表：仅在复查帧重新校验，省掉反复读 60~90 KB
   local known = state.patched[magic]
-  if known and known.done and state.frame % RECHECK_EVERY ~= 0 then return end
+  -- 已处理过的表交给 slots 复查，扫描阶段直接跳过（省掉每次 60~90 KB 重读）
+  if known and known.done then return end
 
   local header = api.read(magic, BASE_OFF)
   if not header or #header < BASE_OFF then return end
@@ -412,11 +506,13 @@ local function apply(magic, t)
   end
 
   -- ★ 自洽校验（不依赖记录顺序）
-  local shape_ok, shape = verify_shape(t, data, count)
+  --   本版本首次见到该表做全量逐条；之后的新副本只均匀抽样 32 条
+  local shape_ok, shape = verify_shape(t, data, count, state.verified[t] and 32 or nil)
   if not shape_ok then
     report(('%s @0x%X：记录区自洽校验失败（%s），拒绝写入'):format(t.name, magic, tostring(shape)), true)
     return
   end
+  state.verified[t] = true
 
   if not known then
     dump(('%s_%X.header.txt'):format(t.name, magic),
@@ -440,7 +536,10 @@ local function apply(magic, t)
   end
 
   if #hits == 0 then
-    state.patched[magic] = { t = t, done = true }
+    state.patched[magic] = { t = t, count = count, done = true }
+    note_hot(magic)
+    state.round_hits = (state.round_hits or 0) + 1
+    refresh_done()
     if not known then
       report(('%s @0x%X（%s）：已无 3/4，无需写入'):format(t.name, magic, t.label))
     end
@@ -448,10 +547,13 @@ local function apply(magic, t)
   end
 
   -- 写入前备份 + 诊断 + 落盘目标清单
-  dump(('%s_%X.before.hex'):format(t.name, magic), hex(data))
-  if not state.dumped[magic] then
-    state.dumped[magic] = true
-    pcall(dump_diag, magic, t, data, count, shape)
+  --   诊断转储默认关闭：整表 hex 要跑几十万次 string.format，是明确的卡顿源
+  if DIAG then
+    dump(('%s_%X.before.hex'):format(t.name, magic), hex(data))
+    if not state.dumped[magic] then
+      state.dumped[magic] = true
+      pcall(dump_diag, magic, t, data, count, shape)
+    end
   end
   do
     local lines = { ('# %s @0x%X  count=%d rec=%d field+%d  共 %d 条待改')
@@ -464,14 +566,14 @@ local function apply(magic, t)
   end
 
   local target = encode_u32(TARGET_VALUE)
-  local wrote, failed = 0, nil
+  local wrote, failed, addrs = 0, nil, {}
   for _, h in ipairs(hits) do
     local addr = base + h.i * t.rec_size + t.field_off
-    local old = api.unprotect(addr, 4)
-    if not old then failed = ('记录 %d：VirtualProtect 失败'):format(h.i); break end
-    local good = api.write(addr, target)
-    api.reprotect(addr, 4, old)
-    if not good then failed = ('记录 %d：WriteProcessMemory 失败'):format(h.i); break end
+    if not write_bytes(addr, target, 4) then
+      failed = ('记录 %d：写入失败'):format(h.i)
+      break
+    end
+    addrs[#addrs + 1] = addr
     wrote = wrote + 1
   end
 
@@ -497,9 +599,16 @@ local function apply(magic, t)
     return
   end
 
-  dump(('%s_%X.after.hex'):format(t.name, magic), hex(back))
+  if DIAG then dump(('%s_%X.after.hex'):format(t.name, magic), hex(back)) end
 
-  state.patched[magic] = { t = t, done = true, wrote = wrote }
+  -- 记录已写入的字段地址：复查只读这几个 4 字节，不再整表重读
+  for _, addr in ipairs(addrs) do
+    state.slots[addr] = { expect = target, magic = magic, t = t }
+  end
+  state.patched[magic] = { t = t, count = count, done = true, wrote = wrote }
+  note_hot(magic)
+  state.round_hits = (state.round_hits or 0) + 1
+  refresh_done()
   state.changed = state.changed + 1
   state.wrote = state.wrote + wrote
 
@@ -508,27 +617,97 @@ local function apply(magic, t)
 end
 
 -- ===========================================================================
--- 内存扫描（时间切片）
+-- 调度：全量搜索 / 维护窗口 / 兜底全量
 -- ===========================================================================
-local regions, cursor, offset_in, started = nil, 1, 0, false
+local started = false
+
+-- 已知表副本的「观察窗口」（地址 ±WINDOW_MARGIN），重叠的合并。
+-- 维护阶段只扫这几百 KB，比全量几 GB 便宜 4~5 个数量级。
+local function collect_windows()
+  local list = {}
+  for magic, rec in pairs(state.patched) do
+    local total = BASE_OFF + (rec.count or 0) * rec.t.rec_size
+    local base = magic - WINDOW_MARGIN
+    if base < 0x10000 then base = 0x10000 end
+    list[#list + 1] = { base = base, size = total + WINDOW_MARGIN * 2 }
+  end
+  table.sort(list, function(a, b) return a.base < b.base end)
+  local out = {}
+  for i = 1, #list do
+    local w = list[i]
+    local last = out[#out]
+    if last and w.base <= last.base + last.size then
+      local stop = w.base + w.size
+      if stop > last.base + last.size then last.size = stop - last.base end
+    else
+      out[#out + 1] = { base = w.base, size = w.size }
+    end
+  end
+  return out
+end
+
+-- 热区列表（合并重叠）
+local function collect_hot()
+  local list = {}
+  for _, r in pairs(state.hot) do list[#list + 1] = { base = r.base, size = r.size } end
+  table.sort(list, function(a, b) return a.base < b.base end)
+  local out = {}
+  for i = 1, #list do
+    local w = list[i]
+    local last = out[#out]
+    if last and w.base <= last.base + last.size then
+      local stop = w.base + w.size
+      if stop > last.base + last.size then last.size = stop - last.base end
+    else
+      out[#out + 1] = { base = w.base, size = w.size }
+    end
+  end
+  return out
+end
+
+local function begin_scan(kind)
+  if kind == 'window' then
+    state.regions = collect_windows()
+  elseif kind == 'hot' then
+    state.regions = collect_hot()
+  else
+    -- ★ 必须重新收集：游戏会把表加载到新分配的区块里
+    state.regions = api.regions()
+    state.rounds = (state.rounds or 0) + 1
+  end
+  if not state.regions or #state.regions == 0 then
+    state.regions = nil
+    state.next_scan_frame = state.frame + 60
+    return
+  end
+  state.region_index, state.region_offset, state.prev = 1, 0, ''
+  state.scan_kind, state.round_hits = kind, 0
+  if kind == 'full' and not state.all_done then
+    local ms = ((state.rounds <= HURRY_ROUNDS) and SCAN_BUDGET_HURRY or SCAN_BUDGET) * 1000
+    report(('第 %d 轮全量扫描开始：%d 个可读区域（预算 %d ms/帧）')
+      :format(state.rounds, #state.regions, mfloor(ms)))
+  end
+end
 
 local function slice()
-  local deadline = os.clock() + SCAN_BUDGET
-  while cursor <= #regions do
-    local region = regions[cursor]
-    while offset_in < region.size do
+  local hurry = (not state.all_done) and (state.rounds or 0) <= HURRY_ROUNDS
+  local deadline = os.clock() + (hurry and SCAN_BUDGET_HURRY or SCAN_BUDGET)
+  while state.region_index <= #state.regions do
+    local region = state.regions[state.region_index]
+    while state.region_offset < region.size do
       if os.clock() > deadline then return false end
-      local amount = math.min(SCAN_CHUNK, region.size - offset_in)
-      local chunk = api.read(region.base + offset_in, amount)
+      local amount = mmin(hurry and SCAN_CHUNK_HURRY or SCAN_CHUNK,
+                          region.size - state.region_offset)
+      local chunk = api.read(region.base + state.region_offset, amount)
       if chunk then
         -- 与上一块尾部拼接：数据表可能横跨 chunk 边界，不拼就会整张漏掉
         local prev = state.prev or ''
         local window = prev .. chunk
-        local window_base = region.base + offset_in - #prev
+        local window_base = region.base + state.region_offset - #prev
         for _, t in ipairs(TABLES) do
           local from = 1
           while true do
-            local found = window:find(t.sig, from, true)
+            local found = sfind(window, t.sig, from, true)
             if not found then break end
             local abs = window_base + found - 1
             if not is_self_hit(abs) then
@@ -541,24 +720,124 @@ local function slice()
             from = found + 1
           end
         end
-        state.prev = chunk:sub(-SCAN_OVERLAP)
+        state.prev = ssub(chunk, -SCAN_OVERLAP)
+      else
+        state.prev = ''        -- 读失败必须清空，否则下一块的 window_base 会算错
       end
-      offset_in = offset_in + amount
+      state.region_offset = state.region_offset + amount
     end
-    cursor, offset_in = cursor + 1, 0
-    state.prev = ''
+    state.region_index, state.region_offset, state.prev = state.region_index + 1, 0, ''
   end
   return true
 end
 
-local function recheck()
-  local dead = nil
-  for magic, rec in pairs(state.patched) do
-    local good = pcall(apply, magic, rec.t)
-    if not good then dead = dead or {}; dead[#dead + 1] = magic end
+local function end_round()
+  local kind = state.scan_kind or 'full'
+  local hits = state.round_hits or 0
+  state.regions, state.round_hits = nil, 0
+
+  if not state.all_done then
+    if hits > 0 then
+      state.empty_rounds = 0
+      state.next_scan_frame = state.frame + 60
+      report(('第 %d 轮结束：命中 %d 处，继续找表'):format(state.rounds, hits))
+    else
+      state.empty_rounds = (state.empty_rounds or 0) + 1
+      local wait = BACKOFF[mmin(state.empty_rounds, #BACKOFF)]
+      state.next_scan_frame = state.frame + mfloor(wait * 60)
+      report(('第 %d 轮结束：未命中（空轮 %d，%d 秒后再试）')
+        :format(state.rounds, state.empty_rounds, wait))
+    end
+    return
   end
-  if dead then
-    for _, m in ipairs(dead) do state.patched[m] = nil end
+
+  if kind == 'window' then
+    if hits > 0 then report(('维护扫描：抓到 %d 处新副本'):format(hits), true) end
+    state.next_scan_frame = state.frame + MAINTAIN_FRAMES
+  elseif kind == 'hot' then
+    if hits > 0 then report(('热区自检：抓到 %d 处新副本'):format(hits), true) end
+  else
+    if hits > 0 then
+      state.full_interval = FULL_RESCAN_EVERY
+      report(('全量扫描：本轮处理 %d 处，退避重置为 %d 分钟')
+        :format(hits, mfloor(FULL_RESCAN_EVERY / 3600)), true)
+    else
+      state.full_interval = mmin((state.full_interval or FULL_RESCAN_EVERY) * 2, FULL_RESCAN_MAX)
+      report(('兜底全量扫描：无新副本（下次间隔 %d 分钟）')
+        :format(mfloor(state.full_interval / 3600)))
+    end
+    state.full_frame = state.frame + state.full_interval
+    state.next_scan_frame = state.frame + MAINTAIN_FRAMES
+  end
+end
+
+-- 复查：只读已写入的 4 字节地址（原来是整表重读 + 逐条校验）
+local function recheck()
+  local live, fixed = 0, 0
+  local bad = nil
+  for address, info in pairs(state.slots) do
+    local cur = api.read(address, 4)
+    if cur == info.expect then
+      live = live + 1
+    else
+      local v = cur and u32_at(cur, 0) or nil
+      if v and SOURCE_VALUES[v] then
+        -- 被游戏写回 3/4 → 重写一次
+        if write_bytes(address, info.expect, 4) then
+          fixed = fixed + 1
+          live  = live + 1
+        else
+          state.slots[address] = nil
+          bad = bad or {}; bad[info.magic] = true
+        end
+      else
+        state.slots[address] = nil
+        bad = bad or {}; bad[info.magic] = true
+        report(('复查：0x%X 的值变成 %s（既非目标也非 3/4），丢弃')
+          :format(address, cur and hex(cur) or 'nil'), true)
+      end
+    end
+  end
+  if fixed > 0 then
+    -- 游戏正在回写 → 说明维护节奏被打到，退避重置，兜底回到基准频率
+    state.full_interval = FULL_RESCAN_EVERY
+    state.full_frame    = state.frame + FULL_RESCAN_EVERY
+    report(('复查：重写被冲掉的补丁 %d 处（兜底间隔重置为 %d 分钟）')
+      :format(fixed, mfloor(FULL_RESCAN_EVERY / 3600)), true)
+  end
+  if bad then
+    local n = 0
+    for magic in pairs(bad) do
+      if state.patched[magic] then state.patched[magic] = nil; n = n + 1 end
+    end
+    if n > 0 then
+      refresh_done()          -- 可能把 all_done 打回 false
+      state.empty_rounds = 0
+      state.next_scan_frame = state.frame + 30
+      report(('复查：%d 张表的地址已失效（表被释放/换图），安排重扫'):format(n), true)
+    end
+  end
+
+  -- ★ 稳定性判定：连续 QUIET_AFTER_CHECKS 次复查都干干净净 → 进入静默
+  if fixed > 0 or bad then
+    state.stable_checks = 0
+    if state.quiet then
+      state.quiet = false
+      state.next_scan_frame = state.frame + 30
+      report('复查发现异常 → 退出静默，恢复扫描', true)
+    end
+  else
+    state.stable_checks = (state.stable_checks or 0) + 1
+    if QUIET_MODE and state.all_done and not state.quiet
+       and state.stable_checks >= QUIET_AFTER_CHECKS then
+      state.quiet = true
+      state.regions = nil
+      local n = 0
+      for _ in pairs(state.slots) do n = n + 1 end
+      report(('已确认生效：连续 %d 次复查无异常 → 进入静默，停止一切扫描；'
+        .. '只保留 %d 个地址 × 4 字节的复查（约 %d 字节/秒）')
+        :format(QUIET_AFTER_CHECKS, n, mfloor(n * 4 * 60 / RECHECK_EVERY)), true)
+    end
   end
 end
 
@@ -568,40 +847,54 @@ local function frame(dt)
   if not started then
     if state.frame < 120 then return end
     started = true
-    regions = api.regions()
-    report(('扫描开始：%d 个可读区域；目标 ProjectileSettings/ExplosionSettings 的 3/4 → %s')
-      :format(#regions, TARGET_LABEL), true)
+    state.next_scan_frame = state.frame
+    report(('目标 3/4 → %s；常态每帧预算 %d ms，打完前 %d ms')
+      :format(TARGET_LABEL, mfloor(SCAN_BUDGET * 1000), mfloor(SCAN_BUDGET_HURRY * 1000)), true)
   end
 
-  if cursor <= #regions then
+  if state.frame % RECHECK_EVERY == 0 then
+    local ok1, err1 = pcall(recheck)
+    if not ok1 then report('复查异常: ' .. tostring(err1), true) end
+  end
+
+  if state.regions then
     local ok2, finished = pcall(slice)
     if not ok2 then
+      state.errs = state.errs + 1
       report('扫描异常: ' .. tostring(finished), true)
-      cursor, offset_in = cursor + 1, 0
+      state.regions = nil
+      state.next_scan_frame = state.frame + 60
     elseif finished then
-      cursor, offset_in = cursor + 1, 0
-      if cursor > #regions then
-        state.rounds = state.rounds + 1
-        report(('第 %d 轮扫描结束：命中并处理 %d 张表，累计改写 %d 条')
-          :format(state.rounds, state.changed, state.wrote), true)
+      end_round()
+    end
+    return
+  end
+
+  -- ★ 静默：注入已确认生效且稳定 → 不做任何扫描。
+  --   QUIET_FALLBACK_FRAMES > 0 时保留一个极稀疏的兜底自检。
+  if state.quiet then
+    -- 静默期自检：默认只扫【热区】（便宜 ~100 倍）；每 QUIET_FULL_EVERY 轮
+    -- 或热区为空时，才做一次真·全量兜底。
+    if QUIET_FALLBACK_FRAMES > 0 and state.frame % QUIET_FALLBACK_FRAMES == 0 then
+      state.hot_ticks = (state.hot_ticks or 0) + 1
+      local hot = collect_hot()
+      if #hot == 0 or (QUIET_FULL_EVERY > 0 and state.hot_ticks % QUIET_FULL_EVERY == 0) then
+        begin_scan('full')
+      else
+        begin_scan('hot')
       end
     end
     return
   end
 
-  -- 扫描完成：定期复查已处理的表（地图重载可能把改动冲掉）
-  if state.frame % RECHECK_EVERY == 0 then
-    local ok3, err3 = pcall(recheck)
-    if not ok3 then report('复查异常: ' .. tostring(err3), true) end
-  end
-  -- 定期重新全扫描，捕捉新加载的拷贝
-  if state.frame % FULL_RESCAN_EVERY == 0 then
-    cursor, offset_in = 1, 0
-    state.prev = ''
-    -- ★ 必须重新收集：游戏可能把表加载到新分配的区块里，
-    --   沿用启动时的区域列表会整张漏掉
-    regions = api.regions()
-    report(('开始新一轮全量扫描（%d 个可读区域）'):format(#regions), true)
+  if state.frame < (state.next_scan_frame or 0) then return end
+
+  if not state.all_done then
+    begin_scan('full')                       -- 还在找表：全量
+  elseif state.frame >= (state.full_frame or 0) then
+    begin_scan('full')                       -- 兜底全量
+  else
+    begin_scan('window')                     -- 维护：只扫已知表 ±32KB
   end
 end
 

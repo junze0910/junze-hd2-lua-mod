@@ -308,6 +308,9 @@ local SELF_PATTERNS   = { SIG_TURRET, SIG_RACK, TURRET_REC, SMOKE_NODE_ANCHOR, S
 -- 扫描提速后把维护间隔收紧（挂载表在任务里会被重新分配，必须尽快把新副本补上）
 local MAINTAIN_FRAMES    = 900    -- 15 秒
 local FULL_RESCAN_FRAMES = 10800  -- 3 分钟
+local FULL_RESCAN_MAX_FRAMES = 21600  -- 兜底间隔上限 6 分钟
+  -- ★ 这几个 mod 的目标表是【每局任务重新加载】的，兜底间隔不能拉太长，
+  --   否则换图后表落到远处地址时会长时间漏打。留 2 倍退避即可。
 -- ---------------------------------------------------------------- 自我命中规避
 -- SKILL 6.2：模式串活在 Lua 堆里，扫内存必然命中自己 → 先取自身地址，命中就跳过
 local function string_addr(s)
@@ -1030,7 +1033,10 @@ local function slice()
       local buf = api.read(region.base + state.region_offset, amount)
       state.scanned = state.scanned + amount
       if buf then
-        if not hurry then pcall(census_scan, buf, region.base + state.region_offset) end
+        -- 已生效后的维护/兜底扫描不再跑 census（每个 chunk 少搜一遍整块内存）
+        if not hurry and state.phase ~= 'patched' then
+          pcall(census_scan, buf, region.base + state.region_offset)
+        end
         local window_base = region.base + state.region_offset - #state.previous
         local window = state.previous .. buf
         -- 抢时间模式先扫挂载表（MountComponentData），它才是"必须在召唤前打好"的那张
@@ -1077,6 +1083,11 @@ local function end_round()
   if (state.round_hits or 0) > 0 then
     state.empty_rounds = 0
     state.phase = 'patched'
+    if kind == 'full' then
+      -- 兜底全量有收获 → 退避重置回基准频率
+      state.full_interval = FULL_RESCAN_FRAMES
+      state.full_frame    = state.frame + FULL_RESCAN_FRAMES
+    end
     if kind == 'window' then
       local copies = 0
       for _ in pairs(state.tables) do copies = copies + 1 end
@@ -1086,9 +1097,13 @@ local function end_round()
       report(('第 %d 轮完成：命中（累计写入 %d 处）'):format(state.rounds, state.writes), true)
     end
   elseif kind == 'window' or state.phase == 'patched' then
-    -- 维护/兜底扫描没抓到新副本：正常，不记账、不退避
+    -- 维护扫描没抓到新副本：正常。兜底全量连续没收获 → 翻倍退避（上限 12 分钟）
     if kind == 'full' then
-      report(('第 %d 轮兜底全量扫描：没有发现新副本'):format(state.rounds), true)
+      state.full_interval = math.min((state.full_interval or FULL_RESCAN_FRAMES) * 2,
+                                     FULL_RESCAN_MAX_FRAMES)
+      state.full_frame    = state.frame + state.full_interval
+      report(('第 %d 轮兜底全量扫描：没有发现新副本（下次间隔 %d 分钟）')
+        :format(state.rounds, state.full_interval / 3600), true)
     end
   else
     state.empty_rounds = state.empty_rounds + 1
@@ -1130,7 +1145,7 @@ local function frame()
     end
     if not state.regions then
       if state.frame >= (state.full_frame or 0) then
-        state.full_frame     = state.frame + FULL_RESCAN_FRAMES
+        state.full_frame     = state.frame + (state.full_interval or FULL_RESCAN_FRAMES)
         state.maintain_frame = state.frame + MAINTAIN_FRAMES
         begin_scan('full')
       elseif state.frame >= (state.maintain_frame or 0) then

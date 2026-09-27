@@ -133,6 +133,9 @@ local ENV = { api = nil, version = nil, source = 'n/a' }
 local SCAN_CHUNK, SCAN_OVERLAP, SCAN_BUDGET, SCAN_BUDGET_HURRY = 256 * 1024, 2048, 0.002, 0.016
 local PROBE_REGIONS, PROBE_CAP, PROBE_WAIT, PROBE_FAIL_LIMIT = 12, 8 * 1024 * 1024, 120, 40
 local MAINTAIN_FRAMES, FULL_RESCAN_FRAMES = 900, 10800
+local FULL_RESCAN_MAX_FRAMES = 21600   -- 兜底间隔上限 6 分钟
+-- ★ 本 mod 的目标表是【每局任务重新加载】的，兜底间隔不能拉太长，
+--   否则换图后表落到远处地址时会长时间漏打；留 2 倍退避即可。
 local BACKOFF, MAX_EMPTY = { 2, 2, 4, 4, 8, 15, 30, 60 }, 8
 
 -- ---------------------------------------------------------------- 日志
@@ -675,6 +678,11 @@ local function end_round()
   state.regions = nil
   if (state.rack_ok and state.strat_ok and state.tune_ok) then
     state.empty_rounds, state.phase = 0, 'patched'   -- 只有三处全部完成才进维护模式
+    if kind == 'full' then
+      -- 兜底全量有收获 → 退避重置回基准频率
+      state.full_interval = FULL_RESCAN_FRAMES
+      state.full_frame    = state.frame + FULL_RESCAN_FRAMES
+    end
     if not state.ready then
       state.ready = true
       report('四项改动均已就绪：**现在可以召唤 / 重新召唤载具了**', true)
@@ -689,7 +697,14 @@ local function end_round()
     report(('部分完成：挂载=%s 战备=%s —— 继续全量扫描（等战备表加载）'):format(
       tostring(state.rack_ok), tostring(state.strat_ok)), true)
   elseif kind == 'window' or state.phase == 'patched' then
-    -- 维护扫描没命中：正常
+    -- 维护扫描没命中：正常；兜底全量连续没收获 → 翻倍退避（上限 12 分钟）
+    if kind == 'full' then
+      state.full_interval = math.min((state.full_interval or FULL_RESCAN_FRAMES) * 2,
+                                     FULL_RESCAN_MAX_FRAMES)
+      state.full_frame    = state.frame + state.full_interval
+      report(('兜底全量扫描：没有发现新副本（下次间隔 %d 分钟）')
+        :format(state.full_interval / 3600))
+    end
   else
     state.empty_rounds = state.empty_rounds + 1
     local wait = BACKOFF[math.min(state.empty_rounds, #BACKOFF)]
@@ -760,7 +775,7 @@ local function frame()
   if state.phase == 'patched' and state.rack_ok and state.strat_ok then
     if state.frame % 300 == 0 then recheck(); write_status(); if state.phase ~= 'patched' then return end end
     if not state.regions then
-      if state.frame >= (state.full_frame or 0) then state.full_frame = state.frame + FULL_RESCAN_FRAMES; state.maintain_frame = state.frame + MAINTAIN_FRAMES; begin_scan('full')
+      if state.frame >= (state.full_frame or 0) then state.full_frame = state.frame + (state.full_interval or FULL_RESCAN_FRAMES); state.maintain_frame = state.frame + MAINTAIN_FRAMES; begin_scan('full')
       elseif state.frame >= (state.maintain_frame or 0) then state.maintain_frame = state.frame + MAINTAIN_FRAMES; begin_scan('window') end
     end
     if state.regions then run_slice() end

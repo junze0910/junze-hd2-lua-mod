@@ -35,13 +35,17 @@ rawset(_G, MOD, {
   writes = 0, refusals = 0, errs = 0, rounds = 0, empty_rounds = 0,
 })
 local state = rawget(_G, MOD)
-state.slots = {}          -- 已写入的字段地址（绝对地址）→ 存活表
+state.slots = {}          -- 已写入的挂载项字段地址 → 存活表
+state.mag_slots = {}      -- 已写入的弹匣容量字段地址 → 期望值（u32 数值）
 state.tables = {}         -- 见过的表副本（magic 地址）→ 维护扫描的观察窗口中心
 state.next_scan_frame = 0
 state.maintain_frame = 0
 state.full_frame = 0
 state.gave_up = false
 state.seen = {}
+state.mag_reported = {}   -- [magic] = 已报告过"弹匣已是目标值"
+state.mag_bad_size = {}  -- [magic] = 已报告过"这份副本 size 不对"
+state.mag_bad_rec  = {}  -- [magic] = 已报告过"这份副本的记录不像 WeaponMagazineComponent"
 
 -- ---------------------------------------------------------------- 日志
 -- loader 的 open_log 是 "w" 模式（每次打开都截断），所以累积后一次性落盘；
@@ -142,8 +146,10 @@ local ok, api = pcall(function()
       if not size or size <= 0 then break end
       local protect   = tonumber(info[0].Protect)
       local committed = tonumber(info[0].State) == 0x1000
+      -- ★ 先剥掉修饰位(0x100 已单独判)再比较：全等比较会漏掉带修饰位的页
+      local proto = bit.band(protect, 0xFF)
       local readable  = bit.band(protect, 0x100) == 0
-        and (protect == 0x04 or protect == 0x20 or protect == 0x40 or protect == 0x02 or protect == 0x80 or protect == 0x08)
+        and (proto == 0x04 or proto == 0x20 or proto == 0x40 or proto == 0x02 or proto == 0x80 or proto == 0x08)
       if committed and readable then
         result[#result + 1] = { base = base, size = size }
       end
@@ -220,6 +226,11 @@ local function decode32(bytes, offset)
   return a + b * 256 + c * 65536 + d * 16777216
 end
 
+local function encode32(v)
+  return string.char(v % 256, math.floor(v / 256) % 256,
+                     math.floor(v / 65536) % 256, math.floor(v / 16777216) % 256)
+end
+
 local function hex(bytes)
   return (bytes:gsub('.', function(c) return string.format('%02X', c:byte()) end))
 end
@@ -242,7 +253,29 @@ local ANCHOR_OLD    = OLD_ITEM .. NODE .. hex_be('02000000FC52964001010000')
 local ANCHOR_NEW    = NEW_ITEM .. NODE .. hex_be('02000000FC52964001010000')
 local MID_OLD       = OLD_ITEM
 local MID_NEW       = NEW_ITEM
-local SELF_PATTERNS = { SIGNATURE, ANCHOR_OLD, ANCHOR_NEW, OLD_ITEM, NEW_ITEM }
+
+-- ---------------------------------------------------------------- 弹匣容量表
+-- 本 mod 换上去的手操重机枪炮台（0xC25DC40EDE0E2D16）的弹药量不在
+-- WeaponRoundsComponentData，而在 WeaponMagazineComponentData：
+--   { ComponentIndexData[530] ; WeaponMagazineComponent[266] }
+--     ComponentIndexData      = { u64 资源哈希, u32 记录下标, u32 填充 }  16 B
+--     WeaponMagazineComponent = 160 B；Capacity(每弹匣发数) 在 +136
+--   （字段名与偏移取自 filediver datalibrary/weapon_magazine_component.go + typelib）
+-- 索引区长度必须硬编码（头部没有 count 字段），所以 size 必须严格等于预期值，
+-- 否则说明布局变了 → 拒绝写入并记日志。
+local MAG_TABLE_TYPE = 0xFB8D88A3                 -- djb2('WeaponMagazineComponentData')
+local MAG_SIG        = MAGIC .. string.char(1, 0, 0, 0) .. hex_le('FB8D88A3')
+local MAG_SIZE       = 51040                      -- = 530*16 + 266*160
+local MAG_IDX_N      = 530
+local MAG_IDX_SZ     = 16
+local MAG_REC_N      = 266
+local MAG_REC_SZ     = 160
+local MAG_CAP_OFF    = 136                        -- Capacity
+local MAG_CHM_OFF    = 156                        -- Chambered（仅作记录合法性校验）
+local MAG_WEAPON     = hex_le('C25DC40EDE0E2D16') -- 目标武器
+local MAG_CAP_VALUE  = 1000                       -- ★ 目标弹药量（每弹匣发数）
+
+local SELF_PATTERNS = { SIGNATURE, ANCHOR_OLD, ANCHOR_NEW, OLD_ITEM, NEW_ITEM, MAG_SIG, MAG_WEAPON }
 local MAINTAIN_FRAMES    = 1800
 local FULL_RESCAN_FRAMES = 36000
 -- ---------------------------------------------------------------- 自我命中规避
@@ -353,6 +386,97 @@ local function apply(magic)
   end
 end
 
+-- 弹匣容量表：索引定位 → 只改目标武器的 Capacity（+136 的 u32）
+--   与 apply() 不同，这里不做全内容扫描：记录位置由表内索引直接给出，
+--   且必须先确认 size == MAG_SIZE（索引区长度靠这个切分）。
+local function apply_magazine(magic)
+  local head = api.read(magic, DATA_OFF)
+  if not head then return end
+  if head:sub(1, 4) ~= MAGIC then return end
+  if decode32(head, 4) ~= 1 then return end
+  if decode32(head, 8) ~= MAG_TABLE_TYPE then return end
+  -- ★ 实机教训（2026-09-27 日志）：内存里同一张实体表有【多份副本】，
+  --   其中 Unity 堆里的那份头部 +12 的 size 是 0（census 看到"出现 2 份，size=0"），
+  --   而文件映射区那份是完整的（MountComponentData = 24744）。
+  --   索引区长度本来就硬编码，不靠 size 切分 —— 所以 size 只能当"非 0 时才校验"的软条件，
+  --   否则会把堆里那份（可能正是游戏在用的）整个跳过。
+  local size = decode32(head, 12)
+  if size ~= 0 and size ~= MAG_SIZE then
+    if not state.mag_bad_size[magic] then
+      state.mag_bad_size[magic] = true
+      report(('武器弹匣表 0x%X：size=%s 与预期 %d 不符，跳过这个副本')
+        :format(magic, tostring(size), MAG_SIZE), true)
+    end
+    return
+  end
+
+  local idx_region = api.read(magic + DATA_OFF, MAG_IDX_N * MAG_IDX_SZ)
+  if not idx_region or #idx_region ~= MAG_IDX_N * MAG_IDX_SZ then return end
+  local rec_idx
+  for k = 0, MAG_IDX_N - 1 do
+    local o = k * MAG_IDX_SZ
+    -- 索引项 = { u64 资源哈希, u32 记录下标, u32 填充(实测恒为 0) }
+    if decode32(idx_region, o + 12) == 0 and idx_region:sub(o + 1, o + 8) == MAG_WEAPON then
+      rec_idx = decode32(idx_region, o + 8)
+      break
+    end
+  end
+  if not rec_idx or rec_idx >= MAG_REC_N then
+    if not state.mag_missing_logged then
+      state.mag_missing_logged = true
+      report(('武器弹匣表 0x%X 里没有目标武器 %s，跳过'):format(magic, hex(MAG_WEAPON)), true)
+    end
+    return
+  end
+
+  local addr = magic + DATA_OFF + MAG_IDX_N * MAG_IDX_SZ + rec_idx * MAG_REC_SZ
+  local rec = api.read(addr, MAG_REC_SZ)
+  if not rec or #rec ~= MAG_REC_SZ then return end
+  -- 记录合法性校验（真实 266 条全部满足）：
+  --   +0  Type 是 MagazineType 枚举(0=Uniform,1=Pattern)
+  --   +136 Capacity ∈ [1,2000]（放宽到 200000）
+  --   +156 Chambered ∈ {0,1}
+  local mtype = decode32(rec, 0)
+  local cap   = decode32(rec, MAG_CAP_OFF)
+  local chm   = rec:byte(MAG_CHM_OFF + 1)
+  if mtype > 1 or cap < 1 or cap > 200000 or (chm ~= 0 and chm ~= 1) then
+    if not state.mag_bad_rec[magic] then
+      state.mag_bad_rec[magic] = true
+      report(('武器弹匣表 0x%X：下标 %d 的记录不像 WeaponMagazineComponent'
+        .. '（type=%s cap=%s chm=%s），跳过这个副本')
+        :format(magic, rec_idx, tostring(mtype), tostring(cap), tostring(chm)), true)
+    end
+    return
+  end
+
+  local field = addr + MAG_CAP_OFF
+  if cap == MAG_CAP_VALUE then
+    -- 已经生效
+    state.mag_slots[field] = MAG_CAP_VALUE
+    state.tables[magic] = true
+    state.round_hits = (state.round_hits or 0) + 1
+    state.phase = 'patched'
+    if state.maintain_frame == 0 then state.maintain_frame = state.frame + MAINTAIN_FRAMES end
+    if state.full_frame == 0 then state.full_frame = state.frame + FULL_RESCAN_FRAMES end
+    if not state.mag_reported[magic] then
+      state.mag_reported[magic] = true
+      report(('弹匣表 0x%X：目标武器已是 %d 发/弹匣，无需改写'):format(magic, MAG_CAP_VALUE), true)
+    end
+    return
+  end
+
+  if not write_bytes(field, encode32(MAG_CAP_VALUE)) then return end
+  state.mag_slots[field] = MAG_CAP_VALUE
+  state.tables[magic] = true
+  state.writes = state.writes + 1
+  state.round_hits = (state.round_hits or 0) + 1
+  state.phase = 'patched'
+  if state.maintain_frame == 0 then state.maintain_frame = state.frame + MAINTAIN_FRAMES end
+  if state.full_frame == 0 then state.full_frame = state.frame + FULL_RESCAN_FRAMES end
+  report(('弹匣表 0x%X：目标武器弹药量 %d -> %d 发/弹匣（已回读验证）')
+    :format(magic, cap, MAG_CAP_VALUE), true)
+end
+
 -- ---------------------------------------------------------------- 复查
 local function write_status()
   local n = 0
@@ -375,6 +499,8 @@ local function write_status()
     ('前置 = Bingus Shared Loader loader-v%s / API %s（来源 %s）'):format(
       tostring(ENV.version or '?'), tostring(ENV.api or '?'), tostring(ENV.source)),
     ('表 = MountComponentData 0x%08X（内容锚点定位，无布局常量）'):format(TABLE_TYPE),
+    ('      + WeaponMagazineComponentData 0x%08X（索引定位；目标武器弹药量 = %d 发/弹匣）')
+      :format(MAG_TABLE_TYPE, MAG_CAP_VALUE),
     ('已写=%d 处  拒绝=%d  轮次=%d  空轮=%d  帧=%d'):format(
       state.writes, state.refusals, state.rounds, state.empty_rounds, state.frame),
     ('内存里的表副本 = %d 处   观察窗口扫描 = 每 %d 秒   全量兜底 = 每 %d 分钟'):format(
@@ -401,10 +527,27 @@ local function recheck()
       dropped = dropped + 1
     end
   end
+  -- 弹匣容量（4 字节 u32）
+  for address, expect in pairs(state.mag_slots) do
+    local cur = api.read(address, 4)
+    if not cur then
+      state.mag_slots[address] = nil
+      dropped = dropped + 1
+    elseif decode32(cur, 0) == expect then
+      live = live + 1
+    elseif write_bytes(address, encode32(expect)) then
+      state.writes = state.writes + 1
+      live, fixed = live + 1, fixed + 1
+    else
+      state.mag_slots[address] = nil
+      dropped = dropped + 1
+    end
+  end
   if fixed > 0 then report(('复查：重写被冲掉的补丁 %d 处'):format(fixed), true) end
   if dropped > 0 then report(('复查：丢弃失效地址 %d 处'):format(dropped), true) end
   if live == 0 then
     state.slots = {}
+    state.mag_slots = {}
     state.tables = {}
     state.maintain_frame = 0
     state.full_frame = 0
@@ -544,7 +687,11 @@ local function slice()
       local buf = api.read(region.base + state.region_offset, amount)
       state.scanned = state.scanned + amount
       if buf then
-        pcall(census_scan, buf, region.base + state.region_offset)
+        -- census 只用于「找不到表」时的诊断；已生效后 / 维护扫描时不再跑，
+        --   否则每个 chunk 都要把整块内存再搜一遍（约 +33% 扫描成本）
+        if state.phase ~= 'patched' and state.scan_kind == 'full' then
+          pcall(census_scan, buf, region.base + state.region_offset)
+        end
         local window_base = region.base + state.region_offset - #state.previous
         local window = state.previous .. buf
         local from = 1
@@ -562,6 +709,22 @@ local function slice()
             end
           end
           from = i + 1
+        end
+        -- ② WeaponMagazineComponentData（手操炮台的弹匣容量）
+        local from2 = 1
+        while true do
+          local i2 = window:find(MAG_SIG, from2, true)
+          if not i2 then break end
+          local abs2 = window_base + i2 - 1
+          if not is_self_hit(abs2) and not state.seen[abs2] then
+            state.seen[abs2] = true
+            local ok3, err3 = pcall(apply_magazine, abs2)
+            if not ok3 then
+              state.errs = state.errs + 1
+              if state.errs <= 3 then report('弹匣表处理异常: ' .. tostring(err3), true) end
+            end
+          end
+          from2 = i2 + 1
         end
         state.previous = buf:sub(-SCAN_OVERLAP)
       else
