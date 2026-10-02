@@ -1,8 +1,12 @@
-c30fa3f170c8f274ff42ed84ea28a2b406327637748a60337783dbd4030d2ca5  AC8-Rack-Backpack-v1.1.zip
-57d4684b12df3fdf9242851c25f273caa852a2d8b20589df363c626a0d0be9ac  Guard-Dog-MG43-v1.1.zip
+df2f1b8bf9c07a4c5ca91291aa7cda97f833ebe6dc97f3adf18c449bd498d7f4  AC8-Rack-Backpack-v2.0.zip
+21a3d4128f5836e86614a2613adbeaf52f40dd7aca70c26de5081fdf5b66d9be  ExoLoadout-v0.7.zip
+9b0865003efdb9f3a67bfdf0103cf001b6d0aced4245d29f912e234eb8fcda74  GuardDogLoadout-v1.0.zip
+2f9a2e42f522ecf38e5e609d014a61904825fbb027523a0dc99bfac812ac0594  Guard-Dog-MG43-v2.0.zip
+dfc6f878f1f37a6b6bd72fc2fbc0652dce33a3329fef4d62ec0df758ca3eff8d  HD2-Scanner-v0.7.0.zip
 529271c1c95dba134235b982e97d7055a48e630a15f68e63ebb02d96a87b75b7  More-Balanced-Exosuit-Emancipator-v1.2.zip
 8e30ed8a82f5a381dff3f7c16f46a261d64949191d6c529a150aace64625b118  More-Balanced-Exosuit-Patriot-v1.2.zip
 0037f1d3b948bb7788ac614457696dd241e7aa08190b3054d763fd5d7809b774  No-Large-Piercing-Medium-v1.4.zip
 9a7e01ad1ea3e76b3a1ea2b3f6d4182aa8971a4e8dd5afa8388ba6f4db25d774  No-Large-Piercing-v1.4.zip
 3140f212e905fa3c6dc577cd3279f38ed6d92a014db01549280d6568cdafef8a  TD-110-Busier-Driver-v1.2.zip
 f78ab31794c3ead7bd71460c0eef02afb6b209beab5b95a28d5f600934cb8c64  TD-110-Co-Op-v1.1.zip
+ffaf15e2a35980b69600b80564365fe285abc6eba7a6ae8a60c9a5937a5878d4  TD-110-Loadout-v1.0.zip

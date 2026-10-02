@@ -12,15 +12,18 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 | **More Balanced Exosuit - Emancipator** | — | Same arm swap, **plus**: carrying the **Emancipator** stratagem also gives you the **Patriot** one — **both exosuits get 1 use / 0 cooldown** (pick **one** of these two — running both crashes the stratagem list) |
 | **No Large Piercing** | **Optimization** | Rewrites every **large-piercing hit-effect tier** (`HitEffectDamageType` `3` `PiercingLarge` / `4` `PiercingLargeHEAT`) to **`0` `None`** — no large-piercing impact FX at all |
 | **No Large Piercing (Medium)** | **Optimization** | Same rewrite, but to **`2` `PiercingMedium`** — downgrades the tier instead of removing it (**pick one** of these two) |
+| **HD2 Scanner** | — | Background scanner/registry that hands table addresses to other mods — **required by** AC-8, Guard Dog and both Loadouts |
+| **Guard Dog Loadout** | — | Guard dog's mounted weapon: **3-way selectable** (vanilla AR-23P / SEAF MG-43 / custom hash) — replaces *Stronger Kinetic Guard Dog* |
+| **TD-110 Loadout** | — | TD-110 mount slots: **4 modes** (vanilla / co-op / busy / custom) + an independent **360° yaw** toggle — replaces *TD-110 Co-Op* and *Busier TD-110 Driver* |
+| **EXO Loadout** | — | EXO stratagem + arm loadout, fully configurable — replaces the two *More Balanced Exosuit* builds (no more "pick one") |
 
 Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-mod/tree/main/dist) (prebuilt zip) · source code in each subfolder.
 
-> **Tags.** `Optimization` is the only tag so far — it currently holds the two **No Large Piercing** variants. Other mods are untagged on purpose.
+> **Tags.** Four release lines: `core` (the HD2 Scanner dependency), `infantry`, `vehicle`, and `logistics` (reserved — no packages yet). Older repo-level releases: `v1.3` (**Optimization** — the two **No Large Piercing** variants) and `v1.2.1` (bundle of 6 mods).
 
-> 中文说明见下方。本仓库分**两条发布线**：【**合集版**】带其余 6 个 mod，【**优化类增量**】只带 **No Large Piercing** 两版。
-> **本次优化类增量**：**No Large Piercing** 两版 —— 确认生效后**进入静默**（停止一切扫描），保留 108 个地址 × 4 字节的复查；静默期每 30 秒只扫「热区」（≈全量的 1%）；单帧扫描预算 8ms → 2ms、复查由整表重读改为地址级；诊断转储默认关闭。
-> **本次合集版更新**（随合集版 Release 发布）：census 普查改为只在「还没找到表」时跑（约 −33% 扫描成本）、周期全量兜底改退避、修正 `PAGE_WRITECOPY` 区段过滤；**Busier TD-110 Driver** 另外把手操重机枪炮台的弹药量改为 **1000 发/弹匣**（原版 500）。
-> 上一版合集见 [`v1.2.1`](https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.2.1)，上一版优化类增量见 [`v1.3`](https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.3)。
+> 中文说明见下方。本仓库按**四条发布线**打 tag：【**core 前置**】= HD2 Scanner（其余 mod 的依赖）；【**infantry 单兵**】= AC-8、实弹狗、护卫犬自选；【**vehicle 载具**】= TD-110 挂载、EXO 战备自选；【**logistics 后勤**】= **预留线**（本次只有占位说明，暂无包）。
+> **本次 v2.0**：AC-8 与实弹狗**升到 2.0** —— 破坏性变更：改为**强依赖 `core-v2.0` 的 Scanner**，缺前置时**不工作**（只写日志说明，不写入任何数据）；同批新增 **HD2 Scanner v0.7.0**、**GuardDogLoadout v1.0**、**TD-110-Loadout v1.0**、**ExoLoadout v0.7**。
+> **模组替代关系**：`TD-110-Loadout` 取代 `TD-110 Co-Op` + `Busier Driver`；`ExoLoadout` 取代外骨骼两版；`GuardDogLoadout` 取代实弹狗。旧包仍在 `dist/` 里，但不再更新。旧线保留：`v1.3`（优化类增量）、`v1.2.1`（合集版 6 个 mod）。
 
 《绝地潜兵 2》(Helldivers 2) 自研 Lua 内存补丁合集。**不修改任何游戏文件**，只在游戏运行时改写内存里的数据表。
 
@@ -36,17 +39,22 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 | **More Balanced Exosuit - Emancipator** | **更均衡的爱国者/解放者外骨骼 · 携带解放者版** | — | **携带解放者外骨骼战备时，额外携带爱国者外骨骼战备**；另有挂载对调 + 两台外骨骼可用次数 1、冷却 0。与上一行**二选一**（同时装会战备套娃崩溃） |
 | **No Large Piercing** | **没有大型穿刺** | **优化** | 把数据表里所有**大型穿刺命中特效档**（`HitEffectDamageType` = `3` `PiercingLarge` / `4` `PiercingLargeHEAT`）改写为 **`0` `None`** —— 完全不再播放大型穿刺命中特效 |
 | **No Large Piercing (Medium)** | **没有大型穿刺（中口径版）** | **优化** | 同样的改写，但目标值改为 **`2` `PiercingMedium`** —— 降档而不是移除。与上一行**二选一** |
+| **HD2 Scanner** | **HD2 扫描器（前置）** | **前置** | 给其他 mod 提供「数据表在哪」的后台扫描内核 + ESC 浮窗配置 —— **AC-8、实弹狗、护卫犬自选、TD-110 挂载、EXO 自选都要装它** |
+| **Guard Dog Loadout** | **护卫犬挂载自选** | **单兵** | 护卫犬挂载武器**三选一**（原装 AR-23P / SEAF MG-43 / 自定义哈希）—— 取代「更强的实弹狗」 |
+| **TD-110 Loadout** | **TD-110 挂载切换** | **载具** | TD-110 两个挂载位**四档模式**（原装 / 合作 / 忙碌 / 自定义）+ 射界 360° 独立开关 —— 取代 `TD-110 Co-Op` 与「更忙的驾驶员」 |
+| **EXO Loadout** | **EXO 战备自选** | **载具** | 携带机体四选一 + 附加机体三选一 + 手臂跨机体互换（只在携带两台间）—— 取代外骨骼两版，**不再需要二选一** |
 
-> **分类（Tags）**：目前只设了「**优化**」一个标签，里面只有 **No Large Piercing** 两个版本（改大型穿刺命中特效）。
-> 其余 mod 暂不归类。
+> **分类（Tags）与发布线**：`优化`（Optimization）只有 **No Large Piercing** 两版；本次起另按**发布线**打 tag —— **前置** `core-v2.0`（HD2 Scanner）、**单兵** `infantry-v2.0`（AC-8 / 实弹狗 / 护卫犬自选）、**载具** `vehicle-v2.0`（TD-110 挂载 / EXO 自选）、**后勤** `logistics-v0.1alpha`（预留，暂无包）。
 
 > 命名说明：mod 管理器会把 manifest 里的 `Name` 当文件夹名用，因此包内使用**纯 ASCII 名**（避免导入时出现"目标名/目录名或卷标语法不正确"）；中文名见上表。
 
-八个 mod 的实机/仿真状态：前四个（AC-8、实弹狗、TD-110 Co-Op、更忙的驾驶员）均已在 **2026-09-25** 实机验证（日志首行 `OK - 补丁生效中（N 处）`，连续运行 40 分钟以上保持生效）；**No Large Piercing 两版均在 2026-09-25 实机验证通过**（`NoLargePiercing.log` 出现 `已回读验证通过`，射弹表 102 条 + 爆炸表 4 条 `3`/`4` 档归零）；外骨骼「携带爱国者版」的挂载 + 战备附加原型已在实机验证通过，**外骨骼 v1.1 的「可用次数 → 1、冷却 → 0」也已实机验证**；「携带解放者版」的附加方向与两版的二选一保护为**离线仿真验证**（4 场景 × 14 项全过，见 `more-balanced-exosuit/DESIGN.md`）。外骨骼两版（相同部分）：挂载 **EXO-49 右臂 → 爱国者加特林炮塔**、**EXO-45 左臂 → 左臂加农炮**；两台外骨骼 **可用次数 `use` 3 → 1**、**冷却 `cooldown_duration_success` 420.0 → 0.0**（`use` 只写一次，用掉就没了）。
+**实机验证（2026-10-03，进任务跑完整局）**：`HD2 Scanner v0.7.0`（自检 11/11，连续 51 轮 `命中 7`，面板正常）、`AC-8 v2.0`（`已写 2 处`，状态行 `地址来源 = HD2Scanner（前置依赖）`）、`GuardDogLoadout v1.0`、`TD-110-Loadout v1.0`（首行 `OK - 补丁生效中（挂载 2 处 / 射界 2 处）`）、`ExoLoadout v0.7`（自检 73/73，手臂逐槽写入成功）—— 五者状态行均为 `前置 = Bingus Shared Loader loader-v17 / API 1`。
+**更早的实机验证（2026-09-25）**：AC-8 / 实弹狗 / TD-110 Co-Op / 更忙的驾驶员 / No Large Piercing 两版 全部实机通过（`OK - 补丁生效中（N 处）`，连续 40 分钟以上保持生效）；外骨骼两版为实机 + 离线仿真（`more-balanced-exosuit/DESIGN.md`）。
 
 ## 依赖
 
-* **Bingus Shared Loader v15 或更高**（loader 日志首行为 `Bingus Shared Loader loader-v1x; API 1`）
+* **Bingus Shared Loader v15 或更高**（loader 日志首行为 `Bingus Shared Loader loader-v1x; API 1`；本次验证环境为 **v17**）
+* **HD2 Scanner**（发布线 `core-v2.0`）—— 上表标「需 Scanner」的 mod 必须**与它同时启用**；缺前置时这些 mod 不工作，只在日志里写明原因（不会乱写内存）
 * 一个能导入 zip 的 HD2 mod 管理器（HD2MM / Arsenal 等）
 
 ## 安装
@@ -55,14 +63,18 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 
    | 文件 | Mod |
    |---|---|
-   | `AC8-Rack-Backpack-v1.1.zip` | AC-8 废案 75 发备弹背包 |
-   | `Guard-Dog-MG43-v1.1.zip` | 更强的实弹狗 |
-   | `TD-110-Co-Op-v1.1.zip` | 更强调合作的 TD-110 |
+   | `HD2-Scanner-v0.7.0.zip` | **HD2 Scanner** —— 下面标「需 Scanner」的包都要装它 |
+   | `AC8-Rack-Backpack-v2.0.zip` | AC-8 废案 75 发备弹背包（**需 Scanner**） |
+   | `Guard-Dog-MG43-v2.0.zip` | 更强的实弹狗（**需 Scanner**） |
+   | `GuardDogLoadout-v1.0.zip` | 护卫犬挂载武器自选（**需 Scanner**；与「更强的实弹狗」二选一） |
+   | `TD-110-Loadout-v1.0.zip` | TD-110 挂载四档 + 射界 360°（**需 Scanner**；取代下面两个 TD-110 包） |
+   | `ExoLoadout-v0.7.zip` | EXO 战备 + 手臂自选（**需 Scanner**；取代外骨骼两版） |
+   | `TD-110-Co-Op-v1.1.zip` | 更强调合作的 TD-110（旧线，见 `v1.2.1`） |
    | `TD-110-Busier-Driver-v1.2.zip` | 更忙的 TD-110 驾驶员（与上一个**二选一**） |
    | `More-Balanced-Exosuit-Patriot-v1.2.zip` | 更均衡的外骨骼 · **携带爱国者版**（携带爱国者战备 → 额外携带解放者战备；可用次数 1、冷却 0） |
-   | `More-Balanced-Exosuit-Emancipator-v1.2.zip` | 更均衡的外骨骼 · **携带解放者版**（携带解放者战备 → 额外携带爱国者战备；可用次数 1、冷却 0）。与上一个**二选一** |
-    | `No-Large-Piercing-v1.4.zip` | 没有大型穿刺（大型穿刺档 → `0` None，完全不打） |
-    | `No-Large-Piercing-Medium-v1.4.zip` | 没有大型穿刺 · 中口径版（大型穿刺档 → `2` PiercingMedium）。与上一个**二选一** |
+   | `More-Balanced-Exosuit-Emancipator-v1.2.zip` | 更均衡的外骨骼 · **携带解放者版**（同上，方向相反）。与上一个**二选一** |
+   | `No-Large-Piercing-v1.4.zip` | 没有大型穿刺（大型穿刺档 → `0` None，完全不打） |
+   | `No-Large-Piercing-Medium-v1.4.zip` | 没有大型穿刺 · 中口径版（大型穿刺档 → `2` PiercingMedium）。与上一个**二选一** |
 2. 用 mod 管理器导入并启用（**不要手动把 `Addon/` 拷进 `data/`** —— 多个 addon 的包内文件名相同，会互相覆盖）；
    * 本次版本的完整说明（含 TD-110 Co-Op 的时序规则）见 [`RELEASE-NOTES.md`](RELEASE-NOTES.md)；
    * 下载包校验：`dist/SHA256SUMS.txt`——
@@ -106,6 +118,22 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 ## 目录结构
 
 ```
+hd2-scanner/
+  src/hd2_scanner.lua                # 入口（首行 -- HD2-Addon: mods/junze/hd2_scanner）
+  src/*.lua                          # platform/registry/kernel/scan/tab/memscan 六个模块资源
+  build.py                           # 打包（多资源 archive；--release 直接拷进 dist/ 并打印 SHA256）
+  test/test_load.py                  # 离线回归（装载/注册表/cfg/面板/源码卫生）
+  test/test_decoders.py              # 解码器 + 合成镜像变异
+  DESIGN.md
+guard-dog-loadout/
+  guard_dog_loadout.lua              # 护卫犬挂载武器三选一
+  DESIGN.md
+td-110-loadout/
+  tank_storm_loadout.lua             # TD-110 挂载四档 + 射界 360°
+  DESIGN.md
+exo-loadout/
+  exo_loadout.lua                    # EXO 战备 + 手臂自选
+  DESIGN.md
 ac8-rack-backpack/
   ac8_rack_backpack.lua   # 源码（首行 -- HD2-Addon: mods/dsh/ac8_rack_backpack 是装载器要求的声明）
   DESIGN.md               # 设计说明

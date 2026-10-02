@@ -18,6 +18,7 @@
 --      只改 +0 这 8 字节，记录其余 112 字节一字不动。
 -- ===========================================================================
 
+local VERSION = '2.0'
 local MOD = 'mods/dsh/guard_dog_mg43'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, {
@@ -50,7 +51,7 @@ end
 local function report(message, keep)
   if not keep and state.status == message then return end
   state.status = message
-  print('[AC8RackBackpack] ' .. message)
+  print('[GuardDogMg43] ' .. message)   -- ⚠ 曾经错写成 AC-8 的前缀（从那份抄过来忘了改）
   loghist[#loghist + 1] = ('[frame %d] %s'):format(state.frame, message)
   flush_log()
 end
@@ -237,6 +238,17 @@ local SELF_PATTERNS = { SIGNATURE, ANCHOR_OLD, ANCHOR_NEW, OLD_PATH, NEW_PATH }
 -- SKILL 6.17：patched 之后持续维护
 local MAINTAIN_FRAMES    = 1800
 local FULL_RESCAN_FRAMES = 36000
+
+-- ---------------------------------------------------------------- Scanner 前置（阶段 2）
+-- 读法 A：**本 mod = 一份「判断条件 + 写入目标」+ 执行代码；
+--          Scanner 是硬前置，只负责「按类型哈希找到表并广播基址」。**
+-- 判断条件（LDLD 魔数 / 类型哈希 / 内容锚点 / 回读校验）和写入目标全在本文件里 —— 定稿 §三 红线 3。
+--
+-- ⚠ USE_SELF_SCAN / SCAN **必须声明在所有用它们的函数之前**（write_status / recheck / frame 都要用）。
+--   2026-10-02 在 AC-8 上踩过：写在文件末尾 → 被解析成全局 nil →
+--   每 300 帧抛一次 `attempt to index global 'SCAN'`，STATUS.log 直接不更新。
+local USE_SELF_SCAN = (rawget(_G, 'GD_USE_SELF_SCAN') == true)
+local SCAN = { api = nil, handle = nil, retry_at = 0, warned = false, polls = 0, applied = 0 }
 -- ---------------------------------------------------------------- 自我命中规避
 -- SKILL 6.2：模式串活在 Lua 堆里，扫内存必然命中自己 → 先取自身地址，命中就跳过
 local function string_addr(s)
@@ -361,7 +373,7 @@ local function write_status()
   for _ in pairs(state.tables) do copies = copies + 1 end
   dump('GuardDogMg43_STATUS.log', table.concat({
     first,
-    'revision=guard-dog-mg43-1.0',
+    'revision=guard-dog-mg43-' .. VERSION,
     'phase=' .. tostring(state.phase),
     'updated=' .. os.date('%Y-%m-%d %H:%M:%S'),
     ('前置 = Bingus Shared Loader loader-v%s / API %s（来源 %s）'):format(
@@ -619,10 +631,71 @@ local function run_slice()
   if finished then end_round() end
 end
 
+-- Scanner 路径：懒获取 _G.HD2Scanner（加载顺序不保证，每 60 秒重试一次）
+local function scanner_get()
+  if SCAN.api then return SCAN.api end
+  local now = os.clock()
+  if now < SCAN.retry_at then return nil end
+  SCAN.retry_at = now + 60
+  local Sv = rawget(_G, 'HD2Scanner')
+  if type(Sv) == 'table' and tonumber(Sv.version) == 1 and type(Sv.poll) == 'function' then
+    SCAN.api = Sv
+    if type(Sv.request) == 'function' then
+      SCAN.handle = Sv.request(TABLE_TYPE, 'Guard Dog MG-43')
+    end
+    report('已接上 HD2Scanner（前置）：地址由 Scanner 提供，本 mod 不再自扫', true)
+    return Sv
+  end
+  if not SCAN.warned then
+    SCAN.warned = true
+    report('未发现 _G.HD2Scanner —— 本 mod 依赖 HD2 Scanner 前置，现在不工作（每 60 秒重试）', true)
+  end
+  return nil
+end
+
+-- poll 拿到表基址 → 直接喂给现成的 apply()（判断条件 + 写入目标都在里面）
+local function scanner_frame(S)
+  local snap = S.poll(TABLE_TYPE)
+  SCAN.polls = SCAN.polls + 1
+  if type(snap) == 'table' and type(snap.entries) == 'table' then
+    for i = 1, #snap.entries do
+      local e = snap.entries[i]
+      if type(e) == 'table' and type(e.addr) == 'number' then
+        local ok2, err = pcall(apply, e.addr)
+        if not ok2 then
+          state.errs = state.errs + 1
+          if state.errs <= 3 then report('apply 异常: ' .. tostring(err), true) end
+        else
+          SCAN.applied = SCAN.applied + 1
+        end
+      end
+    end
+  end
+  -- 复查仍是消费者自己的正确性底线（定稿 §三 红线 5），不受 Scanner 影响
+  if state.frame % 300 == 0 then
+    recheck()
+    write_status()
+  end
+end
+
 local function frame()
   state.frame = state.frame + 1
   if state.frame % 60 == 0 then flush_log() end
 
+  -- ★ Scanner 路径（默认走这条）
+  local S = scanner_get()
+  if S then
+    scanner_frame(S)
+    return
+  end
+
+  -- Scanner 不在：不自扫就到此为止（硬前置语义），定期报一次状态
+  if not USE_SELF_SCAN then
+    if state.frame % 600 == 0 then write_status() end
+    return
+  end
+
+  -- ↓↓↓ 以下全是旧的**自扫路径**，默认不执行（GD_USE_SELF_SCAN=true 才回滚）↓↓↓
   -- 已生效：轻量复查 + 维护扫描 + 全量兜底
   if state.phase == 'patched' then
     if state.frame % 300 == 0 then
@@ -672,5 +745,106 @@ else
   report('全局 update 不可用，无法运行', true)
 end
 
-report(('已加载 v1.0（挂载：内容锚点定位）；前置 loader v%s / API %s（来源 %s）'):format(
-  tostring(ENV.version or '?'), tostring(ENV.api or '?'), tostring(ENV.source)))
+-- ---------------------------------------------------------------- 菜单面板插件（自带写入状态）
+-- 设计：MENU-PANEL-设计定稿 §14 —— 本 mod 自带一页 + 面板 root 页上一行摘要。
+-- 加载顺序不保证（面板可能还没加载）→ 走 _G.HD2MenuQueue 挂起队列（定稿 §14.6）。
+local function menu_attach(menu)
+  local function written_count()
+    local n = 0
+    for _ in pairs(state.slots) do n = n + 1 end
+    return n
+  end
+
+  menu.register{
+    id = 'guard_dog_mg43', title = '实弹狗 MG-43', order = 30, api = 1,
+
+    -- 面板 root 页那一行；约每秒调一次，必须便宜（只读字段，不扫内存）
+    status = function()
+      local n = written_count()
+      if n > 0 then return { text = '已写入', tone = 'ok', note = n .. ' 处' } end
+      if state.refusals > 0 then return { text = '被拒', tone = 'bad', note = state.refusals .. ' 次' } end
+      if not SCAN.api and not USE_SELF_SCAN then
+        return { text = '缺前置', tone = 'bad', note = '没有 HD2Scanner' }
+      end
+      if state.gave_up then return { text = '放弃', tone = 'bad' } end
+      return { text = '找表中', tone = 'warn', note = SCAN.api and 'Scanner' or '自扫' }
+    end,
+
+    -- 详情页。详情档位由面板经 pctx.detail 注入（CFG.detail，1 简 / 2 标准 / 3 诊断）
+    build = function(pctx)
+      local D = tonumber(pctx and pctx.detail) or 2
+      if D < 1 or D > 3 then D = 2 end
+      local rows = {}
+      local function add(l, v, tt, note, min)
+        if D >= (min or 2) then
+          rows[#rows+1] = { label = l, value = tostring(v), tone = tt or 'text', note = note }
+        end
+      end
+      local function hdr(s2, min)
+        if D >= (min or 2) then
+          rows[#rows+1] = { label = s2, tone = 'dim', selectable = false }
+        end
+      end
+      local n = written_count()
+
+      hdr('── 当前状态 ──', 1)
+      add('已写字段', n .. ' 处', n > 0 and 'ok' or 'dim', nil, 1)
+      if state.refusals > 0 then
+        add('拒绝', state.refusals, 'warn', '有写入没通过回读校验，看日志', 2)
+      end
+      add('地址来源', SCAN.api and 'HD2Scanner（前置）' or (USE_SELF_SCAN and '自扫（回滚模式）' or '无'),
+          SCAN.api and 'ok' or 'bad', nil, 2)
+      add('表', ('MountComponentData 0x%08X'):format(TABLE_TYPE), 'text', nil, 2)
+      add('写入', hex(OLD_PATH) .. ' → ' .. hex(NEW_PATH), 'text', 'drone_mg 挂载 → SEAF MG-43', 2)
+
+      hdr('── 规格（判断条件 + 写入目标）──', 3)
+      add('内容锚点', hex(ANCHOR_OLD), 'dim', '旧路径 8 字节 + 上下文常量 4 字节，全表唯一', 3)
+      add('上下文', hex(CTX), 'dim', '记录 +8 处的常量', 3)
+      add('数据起点', ('magic + 0x%X'):format(DATA_OFF), 'dim', '表头 24 字节', 3)
+      add('读取上限', DATA_CAP .. ' 字节', 'dim', 'size 只做区间检查，不当指纹', 3)
+
+      hdr('── 计数 ──', 3)
+      add('写入总次数', state.writes, 'dim', nil, 3)
+      add('轮次', state.rounds, 'dim', nil, 3)
+      add('空轮', state.empty_rounds, 'dim', nil, 3)
+      add('帧', state.frame, 'dim', nil, 3)
+      if state.refusals == 0 then add('拒绝', 0, 'dim', nil, 3) end
+
+      hdr('── 已写地址 ──', 3)
+      local any = false
+      for addr in pairs(state.slots) do
+        any = true
+        add(('0x%X'):format(addr), '✓', 'ok', nil, 3)
+      end
+      if D >= 3 and not any then add('（还没有）', '', 'dim', nil, 3) end
+
+      rows[#rows+1] = { label = '立刻写一次', kind = 'action', on_click = function()
+        local Sv = SCAN.api
+        if not Sv then report('手动写入：没有 Scanner 前置', true) return end
+        local snap = Sv.poll(TABLE_TYPE)
+        local cnt = 0
+        if type(snap) == 'table' and type(snap.entries) == 'table' then
+          for i = 1, #snap.entries do
+            if type(snap.entries[i]) == 'table' then
+              pcall(apply, snap.entries[i].addr) cnt = cnt + 1
+            end
+          end
+        end
+        report(('手动写入：处理了 %d 份表'):format(cnt), true)
+      end }
+      return rows
+    end,
+  }
+end
+
+local menu = rawget(_G, 'HD2Menu')
+if type(menu) == 'table' and type(menu.register) == 'function' then
+  menu_attach(menu)
+else
+  local q = rawget(_G, 'HD2MenuQueue')      -- 面板还没加载 → 挂起（定稿 §14.6）
+  if type(q) ~= 'table' then q = {} rawset(_G, 'HD2MenuQueue', q) end
+  q[#q + 1] = { id = 'guard_dog_mg43', attach = menu_attach }
+end
+
+report(('已加载 v%s（挂载：内容锚点定位；地址来自 HD2Scanner 前置）；前置 loader v%s / API %s（来源 %s）'):format(
+  VERSION, tostring(ENV.version or '?'), tostring(ENV.api or '?'), tostring(ENV.source)))

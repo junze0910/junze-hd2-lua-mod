@@ -33,6 +33,7 @@
 --  设计说明：docs/AC8-Rack-Backpack-v6-DESIGN.md
 -- ===========================================================================
 
+local VERSION = '2.0'
 local MOD = 'mods/dsh/ac8_rack_backpack'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, {
@@ -48,12 +49,19 @@ state.full_frame = 0
 state.gave_up = false
 state.seen = {}
 
--- ---------------------------------------------------------------- 日志
--- loader 的 open_log 是 "w" 模式（每次打开都截断），所以累积后一次性落盘；
--- 关键消息立刻落盘，另外每 60 帧周期性落盘一次（SKILL 6.10）。
-local loghist = {}
-local function flush_log()
+-- ---------------------------------------------------------------- 日志（写法见 SKILL 6.15）
+-- loader 的 open_log 是 "w" 模式（每次打开都截断），所以累积后一次性落盘。
+-- 三条不变量：①环形上限 400  ②连续同一条折叠成 (×N)  ③脏标志 + 1 秒节流。
+-- ⚠ 2026-10-02 之前是「每 report 都截断重写整份 + loghist 只增不减 + keep 绕过去重」，
+--   接上 Scanner 后 apply 每帧被调一次，"已替换"就每帧刷一条并把整份日志重写一遍。
+local LOG_CAP = 400
+local loghist, log_dirty, log_at = {}, false, -10
+
+local function flush_log(force)
   if #loghist == 0 then return end
+  local now = os.clock()
+  if not force and (not log_dirty or now - log_at < 1) then return end
+  log_dirty, log_at = false, now
   local text = table.concat(loghist, '\n') .. '\n'
   pcall(function()
     local loader = rawget(_G, 'CowboyBingusModLoader')
@@ -63,11 +71,20 @@ local function flush_log()
 end
 
 local function report(message, keep)
-  if not keep and state.status == message then return end
-  state.status = message
+  if message == state.status then            -- 连续同一条：原地累加，不新增行
+    state.repeat_n = (state.repeat_n or 1) + 1
+    if #loghist > 0 then
+      loghist[#loghist] = ('[frame %d] %s  (×%d)'):format(state.frame, message, state.repeat_n)
+      log_dirty = true
+    end
+    return                                   -- 不 print、不 append、不 force
+  end
+  state.status, state.repeat_n = message, 1
   print('[AC8RackBackpack] ' .. message)
   loghist[#loghist + 1] = ('[frame %d] %s'):format(state.frame, message)
-  flush_log()
+  if #loghist > LOG_CAP then table.remove(loghist, 1) end
+  log_dirty = true
+  if keep then flush_log(true) end            -- 只有"新消息"才强制落盘（危险操作前留证据）
 end
 
 local function dump(name, text)
@@ -248,12 +265,25 @@ local NEW_ITEM      = hex_le('26BDDF070C31B275')   -- 新背包
 -- 第二份背包(at=rec+192)用 +192 反推才落到记录真正的 +0；若先试 +64，会先撞上
 -- rec+128 的机炮也同样"通过"，日志里的记录下标就会报错（写入地址不受影响）。
 local SLOT_CAND     = { 192, 64 }
+-- 补丁点（记录内偏移）：RackAttach[1].Item 和 RackAttach[3].Item
+--   只用来做「自洽检查」——**不参与定位**，所以不违反"不依赖记录布局"那条红线
+local PATCH_OFFS    = { 64, 192 }
 local SPAWN_OFF     = 556                     -- 仅用于日志
 local IDX_HINT      = 140                     -- 仅用于日志（报告记录下标提示）
 local REC_SIZE_HINT = 568                     -- 仅用于日志
 -- SKILL 6.17：patched 之后持续维护 —— 先扫观察窗口，再全量兜底
 local MAINTAIN_FRAMES    = 1800               -- 30 秒一次"已知副本 ±32KB"扫描
 local FULL_RESCAN_FRAMES = 36000              -- 10 分钟一次全量兜底
+
+-- ---------------------------------------------------------------- Scanner 前置（阶段 2）
+-- 读法 A：**AC-8 = 一份「判断条件 + 写入目标」+ 几十行执行代码；
+--          Scanner 是硬前置，只负责「按类型哈希找到表并广播基址」。**
+--
+-- ⚠ 这两个 local **必须声明在所有用它们的函数之前**（write_status / recheck / frame 都要用）。
+--   2026-10-02 踩过：写在文件末尾 → write_status 里解析成全局 nil →
+--   每 300 帧抛一次 `attempt to index global 'SCAN'`，STATUS.log 直接不更新。
+local USE_SELF_SCAN = (rawget(_G, 'AC8_USE_SELF_SCAN') == true)
+local SCAN = { api = nil, handle = nil, retry_at = 0, warned = false, polls = 0, applied = 0 }
 
 -- ---------------------------------------------------------------- 自我命中规避
 -- SKILL 6.2：模式串活在 Lua 堆里，扫内存必然命中自己 → 先取自身地址，命中就跳过
@@ -304,6 +334,25 @@ local function find_record(data, at)
   return nil
 end
 
+-- ---------------------------------------------------------------- 自洽检查（只警告，不拒绝）
+-- 2026-10-02 新增。旧版有一道「记录与明文基线逐字节一致」的校验，但它把整条 568 字节
+-- 当成指纹 → 游戏一更新基线就过期 → mod 静默失效（9/22 那次三条 mod 全哑就是这个）。
+-- 这里换一种**版本无关**的做法：只要求「补丁点上的值必须是旧背包或新背包」。
+--   出现第三种值 ⇒ 这条记录不是我们认识的样子（被人改过 / 半改 / 撞上别的数据）
+--   ⚠ 只警告，不拒绝 —— 宁可多打一条日志，也不让 mod 因为版本变化而静默失效。
+local function check_patch_points(data, rec, magic)
+  for i = 1, #PATCH_OFFS do
+    local off = PATCH_OFFS[i]
+    local cur = data:sub(rec + off + 1, rec + off + 8)
+    if #cur == 8 and cur ~= OLD_ITEM and cur ~= NEW_ITEM then
+      report(('⚠ 自洽警告：表 0x%X 记录 +%d 处出现未知值 %s（既不是旧背包也不是新背包）—— 仅警告，继续'):format(
+        magic, rec + off, hex(cur)), true)
+      return false
+    end
+  end
+  return true
+end
+
 -- ---------------------------------------------------------------- 写入
 local function write_item(address)
   local old = api.unprotect(address, 8)
@@ -339,6 +388,7 @@ local function apply(magic)
 
   local patched, already, foreign = 0, 0, 0
   local first = nil
+  local checked = {}          -- 每条记录只做一次自洽检查
 
   local function pass(pattern, is_new)
     local from = 1
@@ -350,6 +400,21 @@ local function apply(magic)
       local rec, slot = find_record(data, at)
       if not rec then
         foreign = foreign + 1
+      elseif not checked[rec] then
+        checked[rec] = true
+        check_patch_points(data, rec, magic)      -- ⚠ 只警告（返回值故意忽略）
+        if is_new then
+          state.slots[magic + DATA_OFF + at] = true
+          already = already + 1
+        else
+          local address = magic + DATA_OFF + at
+          if write_item(address) then
+            state.slots[address] = true
+            state.writes = state.writes + 1
+            patched = patched + 1
+            if not first then first = { rec = rec, slot = slot, size = size, at = at } end
+          end
+        end
       elseif is_new then
         state.slots[magic + DATA_OFF + at] = true
         already = already + 1
@@ -422,7 +487,7 @@ local function write_status()
   for _ in pairs(state.tables) do copies = copies + 1 end
   dump('AC8RackBackpack_STATUS.log', table.concat({
     first,
-    'revision=ac8-rack-backpack-1.0',
+    'revision=ac8-rack-backpack-' .. VERSION,
     'phase=' .. tostring(state.phase),
     'updated=' .. os.date('%Y-%m-%d %H:%M:%S'),
     ('前置 = Bingus Shared Loader loader-v%s / API %s（来源 %s）'):format(
@@ -430,14 +495,18 @@ local function write_status()
     ('表 = HellpodRackComponentData 0x%08X（内容锚点定位，无布局常量）'):format(RACK_TYPE),
     ('已写=%d 处  拒绝=%d  轮次=%d  空轮=%d  帧=%d'):format(
       state.writes, state.refusals, state.rounds, state.empty_rounds, state.frame),
-    ('内存里的表副本 = %d 处   观察窗口扫描 = 每 %d 秒   全量兜底 = 每 %d 分钟'):format(
-      copies, MAINTAIN_FRAMES / 60, FULL_RESCAN_FRAMES / 3600),
+    ('地址来源 = %s'):format(
+      SCAN.api and 'HD2Scanner（前置依赖）'
+      or (USE_SELF_SCAN and '本 mod 自扫（回滚模式）' or '无 —— 缺 HD2Scanner 前置，本 mod 不工作')),
+    ('表副本 %d 处   来自 Scanner 的应用 %d 次   自扫路径 = %s'):format(
+      copies, SCAN.applied, USE_SELF_SCAN and '开' or '关'),
   }, '\n') .. '\n')
 end
 
 local function recheck()
-  local live, fixed, dropped = 0, 0, 0
+  local live, fixed, dropped, checked = 0, 0, 0, 0
   for address in pairs(state.slots) do
+    checked = checked + 1
     local cur = api.read(address, 8)
     if cur == NEW_ITEM then
       live = live + 1
@@ -456,7 +525,9 @@ local function recheck()
   end
   if fixed > 0 then report(('复查：重写被冲掉的补丁 %d 处'):format(fixed), true) end
   if dropped > 0 then report(('复查：丢弃失效地址 %d 处'):format(dropped), true) end
-  if live == 0 then
+  -- ⚠ 必须加 checked > 0：否则"还没写过任何补丁"时 live 天然为 0，
+  --   会误报"已无存活补丁"并把 phase 打回 scanning（2026-10-02 实测踩到）
+  if live == 0 and checked > 0 then
     state.slots = {}
     state.tables = {}
     state.maintain_frame = 0
@@ -680,10 +751,80 @@ local function run_slice()
   if finished then end_round() end
 end
 
+-- ---------------------------------------------------------------- Scanner 前置（阶段 2）
+-- 读法 A：**AC-8 = 一份「判断条件 + 写入目标」+ 几十行执行代码；
+--          Scanner 是硬前置，只负责「按类型哈希找到表并广播基址」。**
+-- 判断条件（内容锚点 / 上下文 / 补丁点自洽）和写入目标全在本文件里 —— 定稿 §三 红线 3。
+--
+-- 自扫那套代码**保留**（设 _G.AC8_USE_SELF_SCAN = true 就回滚），但默认不再调用。
+-- USE_SELF_SCAN / SCAN 的声明已挪到文件上方（见「Scanner 前置」注释）。
+
+local function scanner_get()
+  if SCAN.api then return SCAN.api end
+  local now = os.clock()
+  if now < SCAN.retry_at then return nil end
+  SCAN.retry_at = now + 60            -- 每 60 秒重试：Scanner / 本 mod 的加载顺序不保证
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) == 'table' and tonumber(S.version) == 1 and type(S.poll) == 'function' then
+    SCAN.api = S
+    if type(S.request) == 'function' then
+      SCAN.handle = S.request(RACK_TYPE, 'AC-8 Rack Backpack')
+    end
+    report('已接上 HD2Scanner（前置）：地址由 Scanner 提供，本 mod 不再自扫', true)
+    return S
+  end
+  if not SCAN.warned then
+    SCAN.warned = true
+    report('未发现 _G.HD2Scanner —— 本 mod 依赖 HD2 Scanner 前置，现在不工作（每 60 秒重试）', true)
+  end
+  return nil
+end
+
+-- Scanner 路径：poll 拿到表基址 → 直接喂给现成的 apply()（判断条件 + 写入目标都在里面）
+local function scanner_frame(S)
+  local snap = S.poll(RACK_TYPE)
+  SCAN.polls = SCAN.polls + 1
+  if type(snap) == 'table' and type(snap.entries) == 'table' then
+    for i = 1, #snap.entries do
+      local e = snap.entries[i]
+      if type(e) == 'table' and type(e.addr) == 'number' then
+        local ok2, err = pcall(apply, e.addr)
+        if not ok2 then
+          state.errs = state.errs + 1
+          if state.errs <= 3 then report('apply 异常: ' .. tostring(err), true) end
+        else
+          SCAN.applied = SCAN.applied + 1
+        end
+      end
+    end
+  end
+  -- 复查仍是消费者自己的正确性底线（定稿 §三 红线 5），不受 Scanner 影响
+  if state.frame % 300 == 0 then
+    recheck()
+    write_status()
+  end
+end
+
 local function frame()
   state.frame = state.frame + 1
-  if state.frame % 60 == 0 then flush_log() end
+  -- 逐帧调；flush_log 内部有脏标志 + 1 秒节流，多数帧只是几次比较。
+  -- 不用 `frame % 60` 卡：那样日志最多滞后 60 帧才落盘（SKILL 6.15）。
+  flush_log()
 
+  -- ★ Scanner 路径（默认走这条）
+  local S = scanner_get()
+  if S then
+    scanner_frame(S)
+    return
+  end
+
+  -- Scanner 不在：不自扫就到此为止（硬前置语义），定期报一次状态
+  if not USE_SELF_SCAN then
+    if state.frame % 600 == 0 then write_status() end
+    return
+  end
+
+  -- ↓↓↓ 以下全是旧的**自扫路径**，默认不执行（USE_SELF_SCAN=true 才走）↓↓↓
   -- 已生效：轻量复查 + 维护扫描 + 全量兜底
   if state.phase == 'patched' then
     if state.frame % 300 == 0 then
@@ -733,5 +874,113 @@ else
   report('全局 update 不可用，无法运行', true)
 end
 
-report(('已加载 v1.0（内容锚点定位 + 维护扫描）；前置 loader v%s / API %s（来源 %s）'):format(
-  tostring(ENV.version or '?'), tostring(ENV.api or '?'), tostring(ENV.source)))
+-- ---------------------------------------------------------------- 菜单面板插件（自带写入状态）
+-- 设计：MENU-PANEL-设计定稿 §14 —— 本 mod 自带一页 + 面板 root 页上一行摘要。
+-- 加载顺序不保证（面板可能还没加载）→ 走 _G.HD2MenuQueue 挂起队列（定稿 §14.6）。
+local function menu_attach(menu)
+  local function written_count()
+    local n = 0
+    for _ in pairs(state.slots) do n = n + 1 end
+    return n
+  end
+
+  menu.register{
+    id = 'ac8_rack', title = 'AC-8 机炮包架', order = 20, api = 1,
+
+    -- 面板 root 页那一行；约每秒调一次，必须便宜（只读字段，不扫内存）
+    status = function()
+      local n = written_count()
+      if n > 0 then return { text = '已写入', tone = 'ok', note = n .. ' 处' } end
+      if state.refusals > 0 then return { text = '被拒', tone = 'bad', note = state.refusals .. ' 次' } end
+      if not SCAN.api and not USE_SELF_SCAN then
+        return { text = '缺前置', tone = 'bad', note = '没有 HD2Scanner' }
+      end
+      if state.gave_up then return { text = '放弃', tone = 'bad' } end
+      return { text = '找表中', tone = 'warn', note = SCAN.api and 'Scanner' or '自扫' }
+    end,
+
+    -- 详情页（只在页面可见时被调）
+    build = function(pctx)
+      -- 详情档位（面板经 pctx.detail 注入，来自 CFG.detail）：
+      --   1 简   —— 只回答「写进去了没有」+ 手动来一次
+      --   2 标准 —— 加上「接没接上前置 / 改的是哪张表 / 改成了什么」
+      --   3 诊断 —— 全部内部细节（锚点 / 上下文 / 补丁点 / 地址 / 计数），排错时才看
+      local D = tonumber(pctx and pctx.detail) or 2
+      if D < 1 or D > 3 then D = 2 end
+      local rows = {}
+      -- min = 这一行从第几档起出现（缺省 2）
+      local function add(l, v, tt, note, min)
+        if D >= (min or 2) then
+          rows[#rows+1] = { label = l, value = tostring(v), tone = tt or 'text', note = note }
+        end
+      end
+      local function hdr(s, min)
+        if D >= (min or 2) then
+          rows[#rows+1] = { label = s, tone = 'dim', selectable = false }
+        end
+      end
+      local n = written_count()
+
+      hdr('── 当前状态 ──', 1)
+      add('已写字段', n .. ' / ' .. #PATCH_OFFS .. ' 处',
+          (n == #PATCH_OFFS) and 'ok' or (n > 0 and 'warn' or 'dim'), nil, 1)
+      -- 被拒是异常信号：从 2 档起，只要不为 0 就必须露出来
+      if state.refusals > 0 then
+        add('拒绝', state.refusals, 'warn', '有写入没通过自检，看日志', 2)
+      end
+      add('地址来源', SCAN.api and 'HD2Scanner（前置）' or (USE_SELF_SCAN and '自扫（回滚模式）' or '无'),
+          SCAN.api and 'ok' or 'bad', nil, 2)
+      add('表', string.format('HellpodRackComponentData 0x%08X', RACK_TYPE), 'text', nil, 2)
+      add('写入', 'E60AE045E0090F4C → 26BDDF070C31B275', 'text', '旧背包 → 新背包', 2)
+
+      hdr('── 规格（判断条件 + 写入目标）──', 3)
+      add('内容锚点', 'E60AE045E0090F4C', 'dim', '旧背包，用来在表里找记录', 3)
+      add('上下文', 'A8CFFB316F0B5C5F', 'dim', '命中点往前 64 必须是机炮本体', 3)
+      add('补丁点', table.concat(PATCH_OFFS, ' / '), 'dim', '(b2) 自洽：值必须是旧或新', 3)
+
+      hdr('── 计数 ──', 3)
+      add('Scanner 应用', SCAN.applied .. ' 次', 'dim', nil, 3)
+      add('写入总数', state.writes, 'dim', nil, 3)
+      add('轮次', state.rounds, 'dim', nil, 3)
+      if state.refusals == 0 then add('拒绝', 0, 'dim', nil, 3) end
+
+      hdr('── 已写地址 ──', 3)
+      local any = false
+      for addr in pairs(state.slots) do
+        any = true
+        add(string.format('0x%X', addr), '✓', 'ok', nil, 3)
+      end
+      if D >= 3 and not any then add('（还没有）', '', 'dim', nil, 3) end
+
+      rows[#rows+1] = { label = '立刻写一次', kind = 'action', on_click = function()
+        local S = SCAN.api
+        if not S then report('手动写入：没有 Scanner 前置', true) return end
+        local snap = S.poll(RACK_TYPE)
+        local cnt = 0
+        if type(snap) == 'table' and type(snap.entries) == 'table' then
+          for i2 = 1, #snap.entries do
+            if type(snap.entries[i2]) == 'table' then
+              pcall(apply, snap.entries[i2].addr) cnt = cnt + 1
+            end
+          end
+        end
+        report(('手动写入：处理了 %d 份表'):format(cnt), true)
+      end }
+      return rows
+    end,
+  }
+end
+
+do
+  local menu = rawget(_G, 'HD2Menu')
+  if type(menu) == 'table' and type(menu.register) == 'function' then
+    pcall(menu_attach, menu)
+  else
+    local q = rawget(_G, 'HD2MenuQueue')      -- 面板还没加载 → 挂起（定稿 §14.6）
+    if type(q) ~= 'table' then q = {} rawset(_G, 'HD2MenuQueue', q) end
+    q[#q + 1] = { id = 'ac8_rack', attach = menu_attach }
+  end
+end
+
+report(('已加载 v%s（内容锚点定位；地址来自 HD2Scanner 前置）；前置 loader v%s / API %s（来源 %s）'):format(
+  VERSION, tostring(ENV.version or '?'), tostring(ENV.api or '?'), tostring(ENV.source)))

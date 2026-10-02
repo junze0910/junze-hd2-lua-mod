@@ -1,3 +1,95 @@
+# v2.0 — 三条发布线（前置 / 单兵 / 载具）+ 后勤占位
+
+> 本次起改用**按发布线打 tag**，四条线各自演进（旧仓库级 tag `v1.0`~`v1.3` 保留不动）：
+>
+> | 发布线 | tag | 本次内容 |
+> |---|---|---|
+> | 前置 | `core-v2.0` | `HD2-Scanner-v0.7.0.zip` |
+> | 单兵 | `infantry-v2.0` | `AC8-Rack-Backpack-v2.0.zip` · `Guard-Dog-MG43-v2.0.zip` · `GuardDogLoadout-v1.0.zip` |
+> | 载具 | `vehicle-v2.0` | `TD-110-Loadout-v1.0.zip` · `ExoLoadout-v0.7.zip` |
+> | 后勤 | `logistics-v0.1alpha` | **预留线，暂无包** |
+>
+> 每个 tag 的 Release 附件只带**本线**的包 + `SHA256SUMS.txt`；`dist/` 里则始终是全部当前包。
+
+**日期**：2026-10-03 ｜ **验证环境**：Helldivers 2 `1.8.45850.0` + Bingus Shared Loader **v17（API 1）**
+
+## ⚠ 破坏性变更：AC-8 与实弹狗 → **2.0**（改为强依赖前置）
+
+| 包 | 变更 |
+|---|---|
+| `AC8-Rack-Backpack-v2.0.zip` | 从「自扫内存」改为**强依赖 HD2 Scanner 提供表地址**；另加写前自洽检查 + 日志环形/折叠/节流 |
+| `Guard-Dog-MG43-v2.0.zip` | 同上改为**强依赖 HD2 Scanner** |
+
+* **缺前置时不工作，但绝不乱写**：状态行写 `地址来源 = 无 —— 缺 HD2Scanner 前置，本 mod 不工作`，每 60 秒重试（AC-8 保留了 `AC8_USE_SELF_SCAN` 回滚开关）；
+* manifest **GUID 不变**（AC-8 `2b8e6c51-…` / 实弹狗 `7f2c8a04-…`）→ mod 管理器里是**更新**同一个条目，不会多出一个；
+* 好处：不再各自全内存扫表，两个 mod 的定位成本从「每次全量」降到「读 Scanner 广播的基址」。
+
+## 📦 本版内容
+
+### `core-v2.0` — HD2 Scanner v0.7.0（前置）
+
+后台扫描内核：按 `LDLD + u32 版本 + u32 djb2(类型名)` 签名定位数据表（`MountComponentData` / `HellpodRackComponentData` / `StratagemSettings` 等），把**基址广播**给其他 mod；自带 ESC 浮窗面板与 ModOptionsMenu 原生设置页。
+
+* **只读**：不写游戏内存（面板位置/设置写在本地 `HD2Scanner.cfg` / `.pos`）；
+* 时间切片扫描（每帧预算受控），实测连续 51 轮 `命中 7` 稳定、每轮 610~644 帧分 42 帧完成（墙上 0.4~0.5 s）；
+* 自检 11/11：解码器与内存里的 MDL 逐位一致。
+
+### `infantry-v2.0` — 单兵线
+
+| 包 | 作用 |
+|---|---|
+| `AC8-Rack-Backpack-v2.0.zip` | AC-8 机炮包架的备弹背包：原版 **50 发 → 废案 75 发**。定位用背包资源哈希 + 「命中点前后必须是机炮本体」的内容校验，不依赖表布局 |
+| `Guard-Dog-MG43-v2.0.zip` | 机枪犬 `drone_mg` 挂载武器 → **SEAF MG-43（实弹）**。锚点 = 旧路径 8 字节 + `+8` 常量，**只改 8 字节** |
+| `GuardDogLoadout-v1.0.zip` | 护卫犬挂载武器**三选一**：原装 AR-23P / SEAF MG-43 / 自定义哈希（cfg 热重读；非法值拒写并写明原因）。与「更强的实弹狗」**二选一** |
+
+### `vehicle-v2.0` — 载具线
+
+| 包 | 作用 |
+|---|---|
+| `TD-110-Loadout-v1.0.zip` | TD-110 两个挂载位**四档模式**（原装 / 合作 / 忙碌 / 自定义）+ **射界 360° 独立开关**（只解水平 ±180）。硬不变量：两个槽位**恰好一个激光**；取代 `TD-110 Co-Op` + `Busier TD-110 Driver`（两者改的是同一条记录的同一个槽位） |
+| `ExoLoadout-v0.7.zip` | EXO 战备自选：**携带机体四选一 + 附加机体三选一**（禁自引用）+ **手臂跨机体互换**（只在携带的两台之间）+ `use=2`、**冷却不动**。取代外骨骼两版 —— **不再需要二选一** |
+## 校验（SHA-256）
+
+| 包 | SHA-256 |
+|---|---|
+| `HD2-Scanner-v0.7.0.zip` | `dfc6f878f1f37a6b6bd72fc2fbc0652dce33a3329fef4d62ec0df758ca3eff8d` |
+| `AC8-Rack-Backpack-v2.0.zip` | `df2f1b8bf9c07a4c5ca91291aa7cda97f833ebe6dc97f3adf18c449bd498d7f4` |
+| `Guard-Dog-MG43-v2.0.zip` | `2f9a2e42f522ecf38e5e609d014a61904825fbb027523a0dc99bfac812ac0594` |
+| `GuardDogLoadout-v1.0.zip` | `9b0865003efdb9f3a67bfdf0103cf001b6d0aced4245d29f912e234eb8fcda74` |
+| `TD-110-Loadout-v1.0.zip` | `ffaf15e2a35980b69600b80564365fe285abc6eba7a6ae8a60c9a5937a5878d4` |
+| `ExoLoadout-v0.7.zip` | `21a3d4128f5836e86614a2613adbeaf52f40dd7aca70c26de5081fdf5b66d9be` |
+
+`dist/SHA256SUMS.txt` 里是**全部 12 个包**的哈希（含旧线：TD-110 Co-Op v1.1、Busier Driver v1.2、外骨骼两版、No Large Piercing 两版）：
+
+```powershell
+cd dist
+Get-FileHash *.zip -Algorithm SHA256      # 或 Linux/Git Bash: sha256sum -c SHA256SUMS.txt
+```
+
+## 🔁 模组替代关系（旧包仍留在 dist/，但不再更新）
+
+| 新 | 取代 | 为什么 |
+|---|---|---|
+| `TD-110-Loadout-v1.0` | `TD-110-Co-Op-v1.1` + `TD-110-Busier-Driver-v1.2` | 两者改的是同一条记录的同一个槽位、本来就只能二选一 → 合并成一个包 + 模式切换 |
+| `ExoLoadout-v0.7` | `More-Balanced-Exosuit-{Patriot,Emancipator}-v1.2` | 老方案必须二选一（同时装会战备套娃崩溃）→ 改成可配置，只会写一份记录 |
+| `GuardDogLoadout-v1.0` | `Guard-Dog-MG43-v2.0` | 从写死 MG-43 变成三选一（原装 / MG-43 / 自定义） |
+
+## 验证记录
+
+| 项 | 结论 |
+|---|---|
+| `HD2 Scanner v0.7.0` | **2026-10-03 实机**：自检 11/11、连续 51 轮 `命中 7`、面板正常 |
+| `AC8-Rack-Backpack-v2.0` | **Scanner 前置接线/日志/自洽检查已在 1.2.4 实机通过**（`已写 2 处`）；2.0 为版本号 + 打包改动，离线回归 **44/44** |
+| `Guard-Dog-MG43-v2.0` | 离线回归 **32/32**；**本代未实机**（挂载定位逻辑与已实机的 1.2 同源，改的是前置接线） |
+| `GuardDogLoadout v1.0` | **2026-10-03 实机**：`OK - 补丁生效中（1 处）`（默认原装 → 零写入） |
+| `TD-110-Loadout v1.0` | **2026-10-03 实机**：`OK - 补丁生效中（挂载 2 处 / 射界 2 处）`，`yaw360 = 1` |
+| `ExoLoadout v0.7` | **2026-10-03 实机**：自检 73/73、手臂逐槽写入成功（日志中有意保留一处 `拒写` 告警 = 「既非原装也非目标就拒写」的保护生效） |
+
+## 免责声明
+
+非官方作品，与 Arrowhead Game Studios / Sony Interactive Entertainment 无任何关联；仅在游戏运行时修改本机内存，**不分发任何游戏资产**。游戏启用了 nProtect GameGuard，使用第三方工具的风险由使用者自行承担。
+
+---
 # v1.3 — No Large Piercing（优化类，**增量发布**）
 
 > GitHub Release 用 tag **`v1.3`**，**附件只有优化类的 2 个包 + `SHA256SUMS.txt`**（不重复打包其他 mod）。
