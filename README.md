@@ -124,6 +124,7 @@ hd2-scanner/
   build.py                           # 打包（多资源 archive；--release 直接拷进 dist/ 并打印 SHA256）
   test/test_load.py                  # 离线回归（装载/注册表/cfg/面板/源码卫生）
   test/test_decoders.py              # 解码器 + 合成镜像变异
+  Scanner-API.md                     # 对外 API 文档（数据表广播 + memscan 通用扫描，消费者只读）
   DESIGN.md
 guard-dog-loadout/
   guard_dog_loadout.lua              # 护卫犬挂载武器三选一
