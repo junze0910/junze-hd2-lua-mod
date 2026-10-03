@@ -17,7 +17,7 @@
 --  红线：本文件**只读 + 只写自己的目标**，不碰别的字段。
 -- ===========================================================================
 
-local VERSION = '0.7'
+local VERSION = '0.7.2'
 local MOD = 'mods/dsh/exo_loadout'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, phase = 'starting', writes = 0, refusals = 0, errs = 0,
@@ -115,7 +115,8 @@ end
 
 -- ---------------------------------------------------------------- 选择 + cfg 持久化
 -- 默认：携带爱国者、附加解放者、手臂全用原装
-local CFG = { carry = 'patriot', extra = 'emancipator', arms = {} }
+local DEFAULT_EXTRA = rawget(_G, 'EXO_DEFAULT_EXTRA') or 'none'
+local CFG = { carry = 'patriot', extra = DEFAULT_EXTRA, arms = {} }
 local CFG_FILE
 do
   local loader = rawget(_G, 'CowboyBingusModLoader')
@@ -131,7 +132,7 @@ local function cfg_write_default()
     f:write('# EXO 战备自选 —— 改完 1 秒内热生效\n')
     f:write('# 机体 key: patriot(爱国者) / emancipator(解放者) / breacher(突破者) / lumberer(伐木者)\n')
     f:write('carry=patriot        # 携带机体（四选一）\n')
-    f:write('extra=emancipator    # 附加机体（三选一，不能与 carry 相同）\n')
+    f:write('extra=' .. DEFAULT_EXTRA .. '           # 附加机体（无 / 四选一，不能与 carry 相同）\n')
     f:write('# 手臂：写 item 哈希。候选 = 携带两台各自的同侧原装件（可在两台间互换）\n')
     f:write('# arm_<key>_L= / arm_<key>_R= ，留空则用该机体原装\n')
     f:close()
@@ -513,7 +514,7 @@ end
 -- 一张表副本：选起点 -> 逐槽复核 -> 写
 --   mode = 'config'  写用户配置的 item
 --   mode = 'vanilla' 写回原装 item（初始化 / 确认的第一阶段）
-local function apply_rack(magic, mode)
+local function apply_rack(magic, mode, force)
   if not api then return end
   local size = rack_size(magic)
   if not size then return end
@@ -567,13 +568,14 @@ local function apply_rack(magic, mode)
         -- 目标值随 mode 变；「另一个合法值」永远是"这次不想要的那个"
         local want = (mode == 'vanilla') and orig or cfg
         local other = (mode == 'vanilla') and cfg or orig
+        local last = state.slots[address] and state.slots[address].item
         local who  = short_name(body) .. ((sl == 'L') and ' 左臂' or ' 右臂')
         if cur == le(want) then
-          state.slots[address] = { item = want, who = who }
-        elseif cur == le(other) then
+          state.slots[address] = { item = want, orig = orig, who = who }
+        elseif force or want == orig or cur == le(other) or (last and cur == le(last)) then
           if write8(address, le(want)) then
             state.writes = state.writes + 1
-            state.slots[address] = (mode == 'vanilla') and nil or { item = want, who = who }
+            state.slots[address] = { item = want, orig = orig, who = who }
             report(('%s：%s %s -> %s（recIdx %d，node/pad 未动）'):format(
               (mode == 'vanilla') and '还原' or '已改手臂', who, arm_name(other), arm_name(want), ix), true)
           end
@@ -609,7 +611,7 @@ local function recheck()
 end
 
 -- 对 Scanner 广播的每一张表副本跑一遍
-local function apply_all(mode)
+local function apply_all(mode, force)
   if not api or not SCAN.api then return 0 end
   local snap = SCAN.api.poll(RACK_TYPE)
   SCAN.polls = SCAN.polls + 1
@@ -618,7 +620,7 @@ local function apply_all(mode)
     for i = 1, #snap.entries do
       local e = snap.entries[i]
       if type(e) == 'table' and type(e.addr) == 'number' then
-        local ok2, err = pcall(apply_rack, e.addr, mode)
+        local ok2, err = pcall(apply_rack, e.addr, mode, force)
         if not ok2 then
           state.errs = state.errs + 1
           if state.errs <= 3 then report('apply_rack 异常: ' .. tostring(err), true) end
@@ -628,6 +630,22 @@ local function apply_all(mode)
       end
     end
   end
+  return n
+end
+
+local function restore_arms_all()
+  if not api then return 0 end
+  local n = 0
+  for address, info in pairs(state.slots or {}) do
+    local orig = info.orig
+    if orig then
+      local cur = api.read(address, 8)
+      if cur and cur ~= le(orig) then
+        if write8(address, le(orig)) then n = n + 1 end
+      end
+    end
+  end
+  state.slots = {}
   return n
 end
 
@@ -1020,10 +1038,25 @@ end
 
 -- 初始化：cfg 回默认（携带=爱国者 / 附加=解放者 / 手臂全原装）
 local function reset_cfg()
-  CFG.carry, CFG.extra = 'patriot', 'emancipator'
+  CFG.carry, CFG.extra = 'patriot', DEFAULT_EXTRA
   CFG.arms = {}
   state.slots = {}
   cfg_save()
+end
+
+local function do_initialize()
+  local S = rawget(_G, 'HD2Scanner')
+  if S and type(S.scan_cancel) == 'function' then pcall(S.scan_cancel, 'exo_strat_pkg') end
+  restore_strat()
+  restore_arms_all()
+  apply_all('vanilla', true)
+  reset_cfg()
+  state.strat_hits, state.strat_addr, state.strat_regions = {}, {}, nil
+  state.strat_done, state.strat_ok = false, false
+  state.strat_scan_requested, state.strat_scanner_active, state.strat_scanner_used = false, false, false
+  state.strat_pair = nil
+  if MOD_OPTIONS.refresh_arm_values then pcall(MOD_OPTIONS.refresh_arm_values) end
+  report('初始化：已回默认配置并强制写回原装', true)
 end
 
 -- ---------------------------------------------------------------- ModOptionsMenu 适配
@@ -1236,14 +1269,11 @@ local function register_mod_options()
 
   mom.on_change(reset_id, function(v)
     if not v then return end
-    restore_strat()
-    apply_all('vanilla')
-    reset_cfg()
+    do_initialize()
     mom.set(carry_id, index_of_key(CFG.carry))
     mom.set(extra_id, index_of_extra(CFG.extra))
     refresh_arm_values()
     mom.set(reset_id, false)
-    report('ModOptionsMenu: 初始化完成', true)
   end)
 
   report('ModOptionsMenu: EXO 设置已注册到原生 MODS 页（左右手分池）', true)
@@ -1364,11 +1394,7 @@ local function menu_attach(menu)
       end }
 
       rows[#rows + 1] = { label = '初始化（改回原装 + cfg 复位）', kind = 'action', on_click = function()
-        restore_strat()
-        local n = apply_all('vanilla')      -- 撤补丁
-        reset_cfg()                         -- cfg 回默认
-        if MOD_OPTIONS.refresh_arm_values then pcall(MOD_OPTIONS.refresh_arm_values) end
-        report(('初始化：已把改过的槽位写回原装（处理 %d 份表），cfg 已还原为默认'):format(n), true)
+        do_initialize()
       end }
       return rows
     end,

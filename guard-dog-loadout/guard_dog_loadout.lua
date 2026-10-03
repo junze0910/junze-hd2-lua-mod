@@ -24,7 +24,7 @@
 --  红线：只写目标记录 +0 的 8 字节；其余 112 字节一字不动。
 -- ===========================================================================
 
-local VERSION = '1.0'
+local VERSION = '1.0.1'
 local MOD = 'mods/dsh/guard_dog_loadout'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, phase = 'starting', writes = 0, refusals = 0, errs = 0,
@@ -127,6 +127,7 @@ do
 end
 
 local function cfg_parse(text)
+  text = text:gsub('^\239\187\191', '')            -- 剥 UTF-8 BOM：BOM 落在 weapon= 行上会让整行解析失败
   for line in text:gmatch('[^\r\n]+') do
     line = line:gsub('#.*$', '')                       -- 先砍行尾注释
     local k, v = line:match('^%s*([%w_]+)%s*=%s*(.-)%s*$')
@@ -142,15 +143,25 @@ local function cfg_parse(text)
   end
 end
 
+-- cfg 的完整文本（带说明注释）。默认生成与保存共用它 ——
+-- 这样在面板上改一次选项，说明注释也不会被抹掉（以前 cfg_save 只写 3 行裸键）。
+local function cfg_text()
+  return table.concat({
+    '# 护卫犬挂载自选（guard_dog_loadout）—— 改完 1 秒内热生效\n',
+    '# weapon: ar23p(原装/不改写) | mg43(SEAF MG-43) | custom(读下面那行)\n',
+    'weapon=' .. tostring(CFG.weapon) .. '\n',
+    '# custom: 16 位 BE 十六进制（物品哈希 u64）。留空 = 自定义项不可用\n',
+    '#   ⚠ 必须填【确实存在】的 item 哈希：格式对但哈希不存在，狗可能召唤异常\n',
+    '#   例：custom=587878FB76F4B9B1（= SEAF MG-43）\n',
+    'custom=' .. tostring(CFG.custom or '') .. '\n',
+  })
+end
+
 local function cfg_write_default()
   pcall(function()
     local f = io.open(CFG_FILE, 'w')
     if not f then return end
-    f:write('# 护卫犬挂载自选 —— 改完 1 秒内热生效\n')
-    f:write('# weapon: ar23p(原装/不改写) | mg43(SEAF MG-43) | custom(读下面那行)\n')
-    f:write('weapon=ar23p\n')
-    f:write('# custom: 16 位 BE 十六进制（物品哈希 u64）。留空 = 自定义项不可用\n')
-    f:write('custom=\n')
+    f:write(cfg_text())
     f:close()
   end)
 end
@@ -176,9 +187,7 @@ local function cfg_save()
   local ok, err = pcall(function()
     local f = io.open(CFG_FILE, 'w')
     if not f then error('io.open 失败: ' .. tostring(CFG_FILE)) end
-    f:write('# 护卫犬挂载自选\n')
-    f:write('weapon=' .. tostring(CFG.weapon) .. '\n')
-    f:write('custom=' .. tostring(CFG.custom or '') .. '\n')
+    f:write(cfg_text())
     f:close()
   end)
   if not ok then
@@ -201,6 +210,7 @@ local function cfg_hot()
   if text and text ~= cfgt.text then
     cfg_parse(text)
     cfgt.text = text
+    state.last_gen = -1            -- ★ 下一帧立刻按新配置写一遍（不等 APPLY_EVERY）
     report('cfg 热重读: weapon=' .. tostring(CFG.weapon) ..
            ((CFG.weapon == 'custom') and (' custom=' .. tostring(CFG.custom)) or ''), true)
   end
@@ -420,7 +430,7 @@ end
 
 -- 一张表副本：推起点 -> 索引找 recIdx -> node/pad 复核 -> 写 +0 的 8 字节
 --   mode = 'config'  写配置目标；mode = 'vanilla' 写回原装
-local function apply_mount(magic, want_hex, mode)
+local function apply_mount(magic, want_hex, mode, force)
   if not write_enabled then return false end
   local size = validate_table(magic)
   if not size then return false end
@@ -466,28 +476,43 @@ local function apply_mount(magic, want_hex, mode)
   local address = magic + RDATA_OFF + rec_off
   local cur = data:sub(rec_off + 1, rec_off + 8)
   local want_le = le(want_hex)
+  -- ★ 写入保护（SKILL 6.24）：只认「原装」「本次目标」「**上次自己写过的值**」，其余拒写。
+  --   为什么必须认 last：第一次写完后 cur 就等于上次目标；不认 last 的话，
+  --   第二次换目标（原装 -> A -> B）会把 A 当成陌生值而拒写（机甲 mod 踩过这个坑）。
+  --   orig 一并存下来，供「初始化」强制回原装（SKILL 6.25）。
+  local info = state.slots[address]
+  local last = info and info.item
   if cur == want_le then
-    if mode ~= 'vanilla' then state.slots[address] = want_hex end
+    state.slots[address] = { item = want_hex, orig = VANILLA }
     return false
   end
-  if write8(address, want_le) then
-    state.writes = state.writes + 1
-    if mode == 'vanilla' then state.slots[address] = nil else state.slots[address] = want_hex end
-    report(('已写：drone_mg 挂载 %s -> %s（recIdx %d，node=0x%08X/pad=0 未动）'):format(
-      hexs(cur), want_hex, rec_ix, NODE), true)
-    return true
+  --   ⚠ 原装目标不受保护限制：写回原装永远是安全的，而且玩家从别的 mod/旧版本
+  --   切过来时当前值就是"陌生值"，这时必须能回去（否则会被自己的保护困死）。
+  if force or want_hex == VANILLA or cur == le(VANILLA) or (last and cur == le(last)) then
+    if write8(address, want_le) then
+      state.writes = state.writes + 1
+      state.slots[address] = { item = want_hex, orig = VANILLA }
+      report(('%s：drone_mg 挂载 %s -> %s（recIdx %d，node=0x%08X/pad=0 未动）'):format(
+        force and '强制还原' or ((mode == 'vanilla') and '还原' or '已写'),
+        hexs(cur), want_hex, rec_ix, NODE), true)
+      return true
+    end
+    return false
   end
+  state.refusals = state.refusals + 1
+  report(('拒写：drone_mg 挂载当前 %s 既非原装（%s）也非上次自己写过的值（%s）（recIdx %d）；要强写请点「初始化」'):format(
+    hexs(cur), VANILLA, tostring(last or '无'), rec_ix), true)
   return false
 end
 
 -- 对 Scanner 广播的每一张表副本跑一遍
-local function apply_snap(snap, want_hex, mode)
+local function apply_snap(snap, want_hex, mode, force)
   local n = 0
   if type(snap) == 'table' and type(snap.entries) == 'table' then
     for i = 1, #snap.entries do
       local e = snap.entries[i]
       if type(e) == 'table' and type(e.addr) == 'number' then
-        local ok2, err = pcall(apply_mount, e.addr, want_hex, mode)
+        local ok2, err = pcall(apply_mount, e.addr, want_hex, mode, force)
         if not ok2 then
           state.errs = state.errs + 1
           if state.errs <= 3 then report('apply_mount 异常: ' .. tostring(err), true) end
@@ -504,9 +529,10 @@ end
 local function recheck()
   if not write_enabled then return 0 end
   local live, fixed, drop = 0, 0, 0
-  for address, item in pairs(state.slots) do
-    local cur = api.read(address, 8)
-    if cur == le(item) then
+  for address, info in pairs(state.slots) do
+    local item = info and info.item
+    local cur = item and api.read(address, 8) or nil
+    if cur and cur == le(item) then
       live = live + 1
     elseif write8(address, le(item)) then
       state.writes = state.writes + 1
@@ -519,6 +545,23 @@ local function recheck()
   if fixed > 0 then report(('复查：重写被冲掉的补丁 %d 处'):format(fixed), true) end
   if drop  > 0 then report(('复查：丢弃失效地址 %d 处'):format(drop), true) end
   return live
+end
+
+-- 把所有 tracked 槽位写回 orig（原装）。初始化用（SKILL 6.25）。
+local function restore_vanilla_all()
+  if not write_enabled then return 0 end
+  local n = 0
+  for address, info in pairs(state.slots or {}) do
+    local orig = info and info.orig
+    if orig then
+      local cur = api.read(address, 8)
+      if cur and cur ~= le(orig) then
+        if write8(address, le(orig)) then n = n + 1 end
+      end
+    end
+  end
+  state.slots = {}
+  return n
 end
 
 -- ---------------------------------------------------------------- 自扫回滚（GD_USE_SELF_SCAN）
@@ -599,6 +642,7 @@ local function write_status()
     ('weapon=%s%s'):format(tostring(CFG.weapon),
       (CFG.weapon == 'custom') and ('  custom=' .. tostring(CFG.custom)) or ''),
     ('目标 item = %s'):format(want or '(无)'),
+    ('原装 item = %s（初始化回这个）'):format(VANILLA),
     ('实体 = %s   recIdx = %s   挂载位点 node = %d (0x%08X)'):format(
       ENT_HEX, tostring(state.rec_ix or '?'), NODE, NODE),
     ('记录区起点 = %s（运行时推，不硬编码）'):format(tostring(state.layout or '?')),
@@ -658,16 +702,33 @@ local function set_weapon(name)
   if not k then return end
   CFG.weapon = k
   cfg_save()
+  state.last_gen = -1              -- ★ 立刻按新目标写一遍
   report(('cfg: weapon=%s%s'):format(k,
     (k == 'custom') and (' custom=' .. tostring(CFG.custom)) or ''), true)
 end
 
-local function do_reset()
-  CFG.weapon, CFG.custom = 'ar23p', ''
-  state.slots = {}
-  state.layout, state.rec_ix = nil, nil
-  cfg_save()
-  report('初始化：cfg 复位为 AR-23P（之前改过的记录会被写回原装）', true)
+-- 初始化（SKILL 6.25）：回**原始默认**，不是回上次 cfg。
+--   顺序：tracked 槽位写回原装 -> 强制写一遍（vanilla_force，无视"陌生值拒写"）
+--        -> cfg 复位为 AR-23P/空 -> 清运行时状态 -> 落盘 -> 同步 ModOptionsMenu。
+--   初始化**不读** GuardDogLoadout.cfg（上次退出的 cfg 是错误语义）。
+local function do_initialize()
+  restore_vanilla_all()                       -- ① 已 track 的槽位写回原装
+  local S = rawget(_G, 'HD2Scanner')          -- ② vanilla_force：当前值不论是什么都强写
+  if write_enabled and type(S) == 'table' and type(S.poll) == 'function' then
+    pcall(apply_snap, S.poll(MG_TYPE), VANILLA, 'vanilla', true)
+  end
+  CFG.weapon, CFG.custom = 'ar23p', ''        -- ③ cfg 回默认
+  state.slots, state.layout, state.rec_ix = {}, nil, nil
+  state.last_gen = -1                         -- 下一帧立刻重扫一遍
+  cfg_save()                                  -- ④ 落盘
+  if MOD_OPTIONS.registered then              -- ⑤ 同步原生 MODS 页
+    local mom = rawget(_G, 'ModOptionsMenu')
+    if type(mom) == 'table' then
+      pcall(function() mom.set('guard_dog_loadout.weapon', 1) end)
+      pcall(function() mom.set('guard_dog_loadout.reset', false) end)
+    end
+  end
+  report('初始化：已强制写回原装，cfg 复位为 AR-23P（原装）', true)
 end
 
 -- ---------------------------------------------------------------- 菜单面板插件
@@ -716,7 +777,7 @@ local function menu_attach(menu)
         report(('立刻写一次：处理 %d 份表，累计写 %d 处'):format(n, state.writes), true)
       end }
 
-      rows[#rows + 1] = { label = '初始化（写回原装 + cfg 复位）', kind = 'action', on_click = do_reset }
+      rows[#rows + 1] = { label = '初始化（强制写回原装 + cfg 复位）', kind = 'action', on_click = do_initialize }
 
       if D >= 3 then
         add('实体 drone_mg', ENT_HEX, 'dim', '挂载母体')
@@ -771,7 +832,7 @@ local function register_mod_options()
     mod = '护卫犬挂载自选', default = false })
   mom.on_change(rid, function(v)
     if not v then return end
-    do_reset()
+    do_initialize()
     mom.set(id, index_of(CFG.weapon))
     mom.set(rid, false)
   end)
@@ -780,8 +841,8 @@ local function register_mod_options()
 end
 
 -- ---------------------------------------------------------------- 挂载
-local orig = update
-if type(orig) == 'function' then
+local prev_update = update
+if type(prev_update) == 'function' then
   update = function(...)
     local ok2, err = pcall(frame)
     if not ok2 then
@@ -793,7 +854,7 @@ if type(orig) == 'function' then
       state.errs = state.errs + 1
       if state.errs <= 5 then report('ModOptionsMenu error: ' .. tostring(err3)) end
     end
-    return orig(...)
+    return prev_update(...)
   end
 end
 

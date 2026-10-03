@@ -47,10 +47,14 @@
 --      挂载补丁必须早于召唤。切完模式请**重新召唤**坦克。
 --      TurretComponentData 的射界是引擎实时读的 → 射界立刻生效，不用等。
 --
+--  ★ 反复改：覆盖判据 =「白名单 5 件」或「我们自己上次写的值」——**不是**"原装 or 当前目标"，
+--    所以 A -> B -> C 能一路改下去（机甲 mod 的 6.24 就是判据太窄 ->「一个槽只能改一次」）。
+--    初始化（写回原装）额外走 state.force_vanilla：**即使当前值认不出来也能强制写回**（对应 6.25）。
+--
 --  红线：只写目标字段；写前 VirtualProtect、写后回读校验；失败一律记 refuse，绝不当成功。
 -- ===========================================================================
 
-local VERSION = '1.0'
+local VERSION = '1.0.1'
 local MOD = 'mods/dsh/tank_storm_loadout'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, phase = 'starting', writes = 0, refusals = 0, errs = 0,
@@ -61,6 +65,8 @@ state.yslots    = {}       -- 射界地址   -> 期望字节串（两个 float �
 state.yaw_orig  = {}       -- 武器哈希   -> 我们进来时看到的原装射界（用于"关掉开关"时写回）
 state.yaw_addr  = {}       -- 武器哈希   -> 射界字段的绝对地址（面板读现实值用）
 state.yaw_ix    = {}       -- 武器哈希   -> recIdx（诊断用）
+state.force_vanilla = false  -- ★「初始化 / 写回原装」时置位：允许强制覆盖"认不出来的当前值"
+                             --   （对应机甲 mod 的 6.25：当前值未知时也必须能写回原装）
 
 -- ---------------------------------------------------------------- 日志（SKILL 6.15）
 -- loader 的 open_log 是 "w" 模式（每次打开都截断），所以累积后一次性落盘。
@@ -455,6 +461,7 @@ end
 
 local function do_reset()
   state.slots, state.yslots = {}, {}
+  state.force_vanilla = true          -- ★ 允许强制覆盖"认不出来的当前值"（6.25）
   CFG.mode, CFG.yaw360 = 'vanilla', false
   CFG.coop_gun, CFG.busy_gun = 'smoke', 'hmg'
   CFG.driver, CFG.gunner = ITEM_LASER, ITEM_SMOKE
@@ -709,6 +716,21 @@ local function slot_flags(data, rec_off, slot)
   return ('%08X %08X %08X'):format(d32(data, o), d32(data, o + 4), d32(data, o + 8))
 end
 
+-- 当前值能不能被覆盖？三档判据（缺一不可，都是踩过坑换来的）：
+--  ① 白名单 5 件 —— 本 mod 自己改过的任何状态都能再改。
+--     ★ 判据**不是**"原装 or 当前目标"：机甲 mod 的 6.24 就是判据太窄 ->「一个槽只能改一次」。
+--  ② 我们自己上次写进去的值（state.slots 里记着；模式切换会清它，所以只是补充）。
+--  ③ 强制回原装（初始化）：即使当前值认不出来也允许 —— 6.25 的对策。
+local function may_overwrite(address, cur, want_le)
+  if not cur then return true end
+  if KNOWN_ITEM[cur] then return true end
+  if state.slots[address] == cur then return true end
+  if state.force_vanilla and (want_le == ITEM_LE[ITEM_SMOKE] or want_le == ITEM_LE[ITEM_LASER]) then
+    return true
+  end
+  return false
+end
+
 -- 写一个槽位的 8 字节 item。返回 1 = 真写了、0 = 没动
 local function write_slot(address, want_le, who, rec_ix)
   local cur = api.read(address, 8)
@@ -716,10 +738,10 @@ local function write_slot(address, want_le, who, rec_ix)
     state.slots[address] = want_le
     return 0
   end
-  if cur and not KNOWN_ITEM[cur] then
+  if not may_overwrite(address, cur, want_le) then
     state.refusals = state.refusals + 1
-    report(('拒写：%s 当前是 %s —— 不是本 mod 认识的任何一件装备（别的 mod 改过？）'):format(
-      who, hexs(cur)), true)
+    report(('拒写：%s 当前是 %s —— 不是本 mod 认识的任何一件装备（别的 mod 改过？）；' ..
+            '想强行写回原装请点「初始化」'):format(who, hexs(cur)), true)
     return 0
   end
   if write8(address, want_le) then
@@ -803,7 +825,11 @@ local function apply_yaw(magic, want360)
       local rec_off, rec_ix = find_rec(data, cand.base, cand.n, t.le, TURRET_REC_SR)
       if rec_off then
         local cur = data:sub(rec_off + TURRET_YAW + 1, rec_off + TURRET_YAW + 8)
-        if cur == YAW_OLD or cur == YAW_NEW then
+        -- 认表判据 = 射界是已知形态；例外：初始化强制回原装，且这个地址**以前验证过**（6.25 对策）
+        local addr_here = magic + RDATA_OFF + rec_off + TURRET_YAW
+        local forced = state.force_vanilla and (not want360)
+                       and state.yaw_addr[t.hex] == addr_here
+        if cur == YAW_OLD or cur == YAW_NEW or forced then
           hits[#hits + 1] = { t = t, off = rec_off, ix = rec_ix, cur = cur }
         else
           ok = false
@@ -1043,6 +1069,7 @@ local function frame()
   end
 
   state.force = false
+  state.force_vanilla = false         -- 一次性：本轮没用上就作废（下次点初始化会再置位）
 
   if state.writes > w0 then
     state.phase = 'armed'

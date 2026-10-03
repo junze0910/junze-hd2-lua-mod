@@ -1,6 +1,6 @@
 # 护卫犬挂载自选（guard_dog_loadout）· 设计
 
-> 状态：**v1.0 已实现并离线验证（50/50）**，待实机
+> 状态：**v1.0.1 已实现并离线验证（86/86）**，待实机
 > 参照实现：`exo-loadout/exo_loadout.lua` 的**手臂改造**那一条腿（Scanner → MountComponentData）
 > 取代：`guard-dog-mg43`（只能写死 MG-43）
 
@@ -54,9 +54,27 @@ local pub = S.poll(0x3845B1E0)                -- { entries = {{addr, size}}, gen
 3. **只取最大的那个合法候选**（见 §五）
 4. `find_rec`：索引区按 drone_mg 实体哈希的 LE 字节串 → `recIdx`
 5. 记录地址 = `magic + 24 + base + recIdx*120`；**复核** `+8 == 0x53BEC437` 且 `+12 == 0`
-6. 写 `+0` 的 8 字节 + **回读校验**；失败一律记 refusal
+6. **写入保护（SKILL 6.24）**：只认「原装」「本次目标」「**上次自己写过的值**」
+   （`state.slots[addr].item`），其余一律拒写并记日志（日志里指向「初始化」）。
+   **唯一的例外是原装**：写回原装永远放行 —— 否则玩家从旧的 `guard-dog-mg43` 切过来时
+   （内存里已是 MG-43 = 陌生值）会被自己的保护困死，永远回不到原装。
+   `state.slots[addr] = { item = 目标, orig = 原装 }`，`orig` 供初始化恢复。
+7. 写 `+0` 的 8 字节 + **回读校验**；失败一律记 refusal
 
-**节奏**：Scanner 代际变化时立刻应用，之后每 60 帧复扫一遍；每 300 帧 `recheck()` 把被游戏冲掉的补丁重写。
+**节奏**：Scanner 代际变化时立刻应用；**cfg 热重读 / 面板改选项会把 `last_gen` 置 -1**，
+所以下一帧就按新配置写一遍（不等 60 帧）；之后每 60 帧复扫一遍；每 300 帧 `recheck()` 把被冲掉的补丁重写。
+
+### 4.1 初始化（SKILL 6.25）：回原始默认，不是回上次 cfg
+
+`do_initialize()` 的顺序：
+
+1. `restore_vanilla_all()` —— 所有 tracked 槽位写回 `orig`
+2. `apply_snap(S.poll(...), VANILLA, 'vanilla', **force = true**)` —— `vanilla_force`：
+   只校验 node/pad/recIdx，**当前值不论是什么都强写**（否则"陌生值拒写"会让初始化实际不生效）
+3. cfg 复位 `weapon=ar23p, custom=''`
+4. 清空运行时状态（slots / layout / rec_ix），`last_gen = -1` 让下一帧重扫
+5. `cfg_save()` 落盘 —— **初始化不读** `GuardDogLoadout.cfg`（上次退出的 cfg 是错误语义）
+6. 同步 `ModOptionsMenu`（选项回第 1 项、开关关掉）
 
 ## 五、⚠ 为什么"只认最大候选"（本 mod 唯一的坑）
 
@@ -88,11 +106,27 @@ custom=             # 16 位 BE 十六进制（物品哈希 u64）。留空 = �
 
 内置项与自定义项互不覆盖：切回内置项时 `custom` 的值留在 cfg 里。
 
+**自定义值的门槛（实测）**
+
+| 写法 | 结果 |
+|---|---|
+| `custom=587878FB76F4B9B1` / 小写 / 前后空格 / 行尾 `# 注释` | ✅ 生效 |
+| `weapon=ar23p` 但 `custom=` 有值 | ✅ **不参与**，内置项零写入（不会误写） |
+| `custom=0x587878FB…`（带前缀）/ 长度不足 / 全 0 / 空 / 整行缺失 | ✅ **拒写**：零写入 + 日志写明原因 + 保持当前值 |
+| cfg 里另有未知键（`foo=bar`）或注释 | ✅ 忽略，不影响解析 |
+
+- ⚠ **格式对 ≠ 能用**：本 mod **不校验哈希的含义**（那是玩家的责任）。
+  填一个不存在/不适配的 item 哈希，会真的写进挂载槽 → 狗可能召唤异常。
+- ⚠ **BOM**：PS 5.1 的 `Set-Content -Encoding UTF8` 会写 BOM，落在 `weapon=` 行上会让整行解析失败。
+  mod 已**自动剥 BOM**（`test_gd_loadout.py` 用例 20 钉住），但更稳的做法是用不写 BOM 的编辑器。
+- ⚠ **注释会被保住了**：`cfg_save` 现在写的是带说明的完整模板（以前只写 3 行裸键），
+  所以面板上改一次选项/点初始化，文件里的填写说明不会消失。
+
 ## 八、面板
 
 | 入口 | 内容 |
 |---|---|
-| Scanner 插件页（`_G.HD2Menu`） | 「下挂物品」下拉三选一 + 「立刻写一次」+ 「初始化（写回原装 + cfg 复位）」+ 三档诊断 |
+| Scanner 插件页（`_G.HD2Menu`） | 「下挂物品」下拉三选一 + 「立刻写一次」+ 「初始化（强制写回原装 + cfg 复位）」+ 三档诊断 |
 | `ModOptionsMenu` 原生 MODS 页 | 同上的下拉 + 初始化开关；**选项的 `description` 里给出 cfg 的完整路径** |
 
 ### 8.1 cfg 路径写在「右边的描述页」
@@ -115,6 +149,8 @@ C:\Users\<你>\AppData\Local\CowboyBingus\Helldivers2\GuardDogLoadout.cfg
 ## 九、红线
 
 - 只写目标记录 `+0` 的 8 字节，其余 112 字节一字不动（用例 2 逐字节钉住）
+- 写入保护只放行「原装 / 本次目标 / 上次自己写过的值」，陌生值拒写（用例 18）
+- 连续换目标必须能写（原装 → A → B，用例 17）；初始化必须能强制回原装（用例 19）
 - 写前 `VirtualProtect`、写后回读校验；失败记 refusal，绝不当成功
 - 不碰其它记录、其它表；不写任何 UI 结构
 
@@ -122,14 +158,14 @@ C:\Users\<你>\AppData\Local\CowboyBingus\Helldivers2\GuardDogLoadout.cfg
 
 ```
 junze-hd2-lua-mod/guard-dog-loadout/guard_dog_loadout.lua   （源码，VERSION 单源）
-build/GuardDogLoadout-v1.0.zip                              （打包产物，SHA256 9B086500…）
-_probe/test_gd_loadout.py                                   （50 项离线回归）
+build/GuardDogLoadout-v1.0.1.zip                            （打包产物，SHA256 686DC8B0…）
+_probe/test_gd_loadout.py                                   （86 项离线回归：定位/保护/连续换目标/初始化/cfg 边界/源码卫生）
 tools/build_mod.py  MODS["guard_dog_loadout"]
 ```
 
 ## 十一、待办
 
-- **实机验证**：装 `HD2-Scanner` + `GuardDogLoadout-v1.0.zip`，进任务 → 看
+- **实机验证**：装 `HD2-Scanner` + `GuardDogLoadout-v1.0.1.zip`，进任务 → 看
   `Logs\GuardDogLoadout.log`（应出现「已接上 HD2Scanner」+「已写：drone_mg 挂载 …」）
   与 `GuardDogLoadout_STATUS.log`；再换 MG-43 / 自定义各试一次
 - 实机确认后：把 `guard-dog-mg43` 归档（包名/目录都退成归档，避免两个 mod 抢同一记录）

@@ -66,19 +66,19 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
    | `HD2-Scanner-v0.7.0.zip` | **HD2 Scanner** —— 下面标「需 Scanner」的包都要装它 |
    | `AC8-Rack-Backpack-v2.0.zip` | AC-8 废案 75 发备弹背包（**需 Scanner**） |
    | `Guard-Dog-MG43-v2.0.zip` | 更强的实弹狗（**需 Scanner**） |
-   | `GuardDogLoadout-v1.0.zip` | 护卫犬挂载武器自选（**需 Scanner**；与「更强的实弹狗」二选一） |
-   | `TD-110-Loadout-v1.0.zip` | TD-110 挂载四档 + 射界 360°（**需 Scanner**；取代下面两个 TD-110 包） |
-   | `ExoLoadout-v0.7.zip` | EXO 战备 + 手臂自选（**需 Scanner**；取代外骨骼两版） |
-   | `TD-110-Co-Op-v1.1.zip` | 更强调合作的 TD-110（旧线，见 `v1.2.1`） |
-   | `TD-110-Busier-Driver-v1.2.zip` | 更忙的 TD-110 驾驶员（与上一个**二选一**） |
+   | `GuardDogLoadout-v1.0.1.zip` | 护卫犬挂载武器自选（**需 Scanner**；与「更强的实弹狗」二选一；替换 v1.0） |
+   | `TD-110-Loadout-v1.0.1.zip` | TD-110 挂载四档 + 射界 360°（**需 Scanner**；取代下面两个 TD-110 包） |
+   | `ExoLoadout-v0.7.2.zip` | EXO 战备 + 手臂自选（**需 Scanner**；取代外骨骼两版；替换 v0.7） |
+   | `TD-110-Co-Op-v1.1.zip` | 更强调合作的 TD-110（**已废弃**，见旧线 `v1.2.1`；`dist/` 已下架） |
+   | `TD-110-Busier-Driver-v1.2.zip` | 更忙的 TD-110 驾驶员（**已废弃**，与上一个**二选一**；`dist/` 已下架） |
    | `More-Balanced-Exosuit-Patriot-v1.2.zip` | 更均衡的外骨骼 · **携带爱国者版**（携带爱国者战备 → 额外携带解放者战备；可用次数 1、冷却 0） |
    | `More-Balanced-Exosuit-Emancipator-v1.2.zip` | 更均衡的外骨骼 · **携带解放者版**（同上，方向相反）。与上一个**二选一** |
    | `No-Large-Piercing-v1.4.zip` | 没有大型穿刺（大型穿刺档 → `0` None，完全不打） |
    | `No-Large-Piercing-Medium-v1.4.zip` | 没有大型穿刺 · 中口径版（大型穿刺档 → `2` PiercingMedium）。与上一个**二选一** |
 2. 用 mod 管理器导入并启用（**不要手动把 `Addon/` 拷进 `data/`** —— 多个 addon 的包内文件名相同，会互相覆盖）；
-   * 本次版本的完整说明（含 TD-110 Co-Op 的时序规则）见 [`RELEASE-NOTES.md`](RELEASE-NOTES.md)；
+   * 本次版本的完整说明（含 TD-110 挂载的时序规则）见 [`RELEASE-NOTES.md`](RELEASE-NOTES.md)；
    * 下载包校验：`dist/SHA256SUMS.txt`——
-     `cd dist; certutil -hashfile TD-110-Co-Op-v1.1.zip SHA256`（Git Bash：`sha256sum -c SHA256SUMS.txt`）；
+     `cd dist; certutil -hashfile TD-110-Loadout-v1.0.1.zip SHA256`（Git Bash：`sha256sum -c SHA256SUMS.txt`）；
 3. 进游戏。数据表是在任务里按需加载的，一般进图后约 1 分钟生效。
    * **装 `TD-110 Co-Op` 时有一条额外规则**：挂载表（`MountComponentData`）是**生成载具时读一次**的静态配置，
      补丁必须**早于召唤载具** —— 进任务后先等 `TankStormCoop.log` 出现
