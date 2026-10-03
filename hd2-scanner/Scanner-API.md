@@ -1,6 +1,6 @@
 # HD2 Scanner API 接口文档
 
-> 适用范围：HD2 Scanner v0.7.0+
+> 适用范围：HD2 Scanner v0.8.0+（AOB 战备表 API 见 §4，v0.8.0 起可用）
 > 入口：`_G.HD2Scanner`
 
 ---
@@ -9,10 +9,11 @@
 
 ## 0. 概览
 
-`HD2Scanner` 对外提供两类 API：
+`HD2Scanner` 对外提供三类 API：
 
 1. **数据表广播 API**：Scanner 后台定位 LDLD 数据表，把表基址广播给消费者。
 2. **通用全量扫描 API (`memscan`)**：消费者提交字节 pattern，Scanner 分片扫描内存并回调命中地址。
+3. **AOB 战备表 API**：在 `game.dll` 里解出 `StratagemSettings` 记录指针数组，按 ID 直取记录（§4）。
 
 消费者只读；结构校验、写入、回读都由消费者自己负责。
 
@@ -93,7 +94,9 @@ S.watch(0x3845B1E0, addr)
 S.unwatch(0x3845B1E0, addr)
 ```
 
-当前版本中 `watched` 主要供诊断/UI 状态使用，不改变定位算法。
+⚠️ **兼容占位**：当前版本没有任何消费者会读 `watched`（原先读它的自绘面板已于 2026-10-04 退役），
+它**不改变任何行为** —— 定位算法无条件扫描全部已登记的表，与订阅无关。
+`request()` / `watch()` / `unwatch()` 保留只为兼容既有消费者，新代码可以不调。
 
 ### 2.4 `status()`
 
@@ -139,6 +142,19 @@ local regions = S.regions_list()
 local bytes = S.api.read(addr, n)
 local regions = S.api.regions()
 ```
+
+`regions_list()` 是**一次性**枚举（`VirtualQuery` 全量），调用有一定开销；
+当前发布包内没有消费者在用它（`memscan` 自己内部枚举），保留给排查/自研消费者。
+
+### 2.7 `declare_need()`
+
+不订阅任何表也能催一轮探针（比 `request(...).declare_need()` 更直接）：
+
+```lua
+S.declare_need()      -- 置 urgent：下一帧就插队跑一轮
+```
+
+Scanner 自己 MOM 面板的「点一下 = 立刻扫一轮」用的就是它。
 
 ## 3. 通用全量扫描 API (`memscan`)
 
@@ -231,7 +247,94 @@ local st = S.scan_status('exo_strat_pkg')
 - 多请求排队，同一时间只跑一个全量扫描
 - 命中只回传地址；结构校验/写入由消费者自己做
 
-## 4. 已知数据表类型哈希
+## 4. AOB 战备表定位 API
+
+> 适用 HD2 Scanner v0.8.0+。旧版 Scanner 没有这一套，消费者必须先 `type(S.strat_rec) == 'function'` 再调。
+
+`StratagemSettings` 在内存里**不是** LDLD 块，无法用类型哈希广播。Scanner 改为在 `game.dll`
+代码段里找一对固定指令（来源：StratagemCooldown 2.1.5），解出**战备记录指针数组**的基址：
+
+```text
+49 8B 84 C7 ?? ?? ?? ??   mov rax,[r15+rax*8+disp32]
+44 8B 80 C8 00 00 00      mov r8d,[rax+0xC8]
+8B C2 45 85 C0            mov eax,edx / test r8d,r8d
+```
+
+解析**分帧**推进（2 MB/帧；本机 33 MB 代码段 ≈ 17 帧），调用者不用等。
+
+### 4.1 `strat_table_request()`
+
+请求（或重试）解析。幂等：正在扫 / 已成功都直接返回 `true`。
+
+```lua
+local ok, why = S.strat_table_request()
+```
+
+### 4.2 `strat_table_status()`
+
+```lua
+local st = S.strat_table_status()
+```
+
+| 字段 | 说明 |
+|---|---|
+| `state` | `idle` / `scanning` / `ok` / `failed` |
+| `reason` | 失败原因（`failed` 时非空） |
+| `base` | `ok` 时为战备记录指针数组基址 |
+| `r15` / `consumer` / `disp` | 解链中间量，诊断用 |
+| `scanned` / `total` | 已扫 / 需扫字节数 |
+| `slots` / `slots_ok` | 结构探针：前 256 个槽位里可读指针个数 |
+| `ms` / `frames` | 解析耗时 / 分帧数 |
+
+### 4.3 `strat_table_base()`
+
+`ok` 时返回 `base`，否则 `nil`。
+
+### 4.4 `strat_slot(id)`
+
+```lua
+local ptr, why = S.strat_slot(27)
+```
+
+`slot_ptr(id) = u64 @ table_base + id*8`，带合理地址校验。`id` 范围 `0..255`。
+
+### 4.5 `strat_rec(id, n)`
+
+```lua
+local rec, why = S.strat_rec(27)          -- n 默认 0xD0
+local pkg  = rec and rec:sub(0xA9, 0xB0)  -- package
+```
+
+读记录前 `n` 字节（`1..0x100`）。已知偏移（typelib）：
+
+| 偏移 | 字段 |
+|---:|---|
+| `+0x00` | id（= 数组下标） |
+| `+0x50` | uses（int32，-1 = 无限） |
+| `+0x68` / `+0x6C` | cooldown 成功 / 失败 |
+| `+0xA8` | package |
+| `+0xB0` | icon |
+| `+0xC4` | depends_on（期望 0） |
+| `+0xC8` | additional_stratagem |
+| `+0xCC` | max_in_loadout（期望 0） |
+
+### 4.6 失败与回退
+
+任何一步不成立都**直接失败**，不猜：
+
+- AOB 命中不唯一（≥ 2 处）
+- `disp32` / `lea r15` 锚点读不到
+- `table_base` 不在合理地址范围
+- 前 256 个槽位里一个可读指针都没有（解出来的不是指针数组）
+
+消费者应当保留兜底路径（ExoLoadout 会退回「全内存搜 package 值」）。
+`state == 'failed'` 之后可以再调 `strat_table_request()` 重试。
+
+### 4.7 与广播 API 的关系
+
+AOB 只回答「战备表在哪」。该表不是 LDLD 块，所以不会出现在 `request()` / `poll()`
+的广播里，也没有 `generation` —— 表基址变化要消费者自己每秒复核一次记录内容。
+## 5. 已知数据表类型哈希
 
 | 表 | type_hash |
 |---|---:|
@@ -243,7 +346,7 @@ local st = S.scan_status('exo_strat_pkg')
 | `ProjectileSettings` | `0xBD4042C2` |
 | `ExplosionSettings` | `0x2AEA2592` |
 
-## 5. 最小消费者示例
+## 6. 最小消费者示例
 
 ```lua
 local S = rawget(_G, 'HD2Scanner')
@@ -264,16 +367,29 @@ local function frame()
 end
 ```
 
+## 7. 界面与消费者的约定（2026-10-04 起）
+
+- ⛔ **不要再注册 `_G.HD2Menu` / `HD2MenuQueue`** —— 那套页面体系（自绘面板 + 对象注册表）
+  已整体退役：渲染宿主 `ui.lua` 不再打包，`registry.lua` 已删除。照旧写法注册只会得到一张
+  永远不显示的页面（`rawget(_G,'HD2Menu')` 现在是 `nil`）。
+- ✅ **界面一律注册原生 `_G.ModOptionsMenu`**（`mom.register_option`）。它只支持
+  `toggle` / `choice` / `slider`，**没有只读状态行**；但 `label` / `description` / `choice` 文本
+  **可以是函数**，每次打开 ESC 菜单时重算 —— 状态就挂在这两个函数上。
+- Scanner 自己在 MODS 页注册了 3 行（供玩家观察/操作，不是给消费者调用的 API）：
+  `hd2_scanner.status`（状态 + 点一下立刻扫一轮）· `hd2_scanner.aob`（解析战备表）·
+  `hd2_scanner.diag`（把状态写进日志）。
+
 ---
 
 # English
 
 ## 0. Overview
 
-`HD2Scanner` exposes two API families:
+`HD2Scanner` exposes three API families:
 
 1. **Data table broadcast API**: the background kernel locates LDLD tables and broadcasts their addresses.
 2. **Generic full-memory scan API (`memscan`)**: consumers submit byte patterns and receive hit addresses.
+3. **AOB stratagem-table API**: resolves the `StratagemSettings` record pointer array from `game.dll` and reads records by id (§4).
 
 The consumer is responsible for validation, writes, and read-back verification.
 
@@ -339,7 +455,9 @@ S.watch(type_hash, addr)
 S.unwatch(type_hash, addr)
 ```
 
-Marks an entry as watched. Currently used for diagnostics/UI state.
+**Compatibility placeholder**: nothing reads `watched` any more (the self-drawn panel that used it
+was retired on 2026-10-04) and it changes no behaviour - the kernel scans all known tables
+regardless of subscriptions. `request()` / `watch()` / `unwatch()` are kept for existing consumers.
 
 ### 2.4 `status()`
 
@@ -366,6 +484,19 @@ local regions = S.regions_list()
 local bytes2   = S.api.read(addr, n)
 local regions2 = S.api.regions()
 ```
+
+`regions_list()` enumerates every readable region once (`VirtualQuery`), so it is not free.
+No shipped consumer uses it today (`memscan` enumerates internally); it is kept for diagnostics.
+
+### 2.7 `declare_need()`
+
+Ask for one probe round without subscribing to any table:
+
+```lua
+S.declare_need()      -- sets urgent; a round starts on the next frame
+```
+
+This is what Scanner's own MODS-page row ("click = scan one round now") uses.
 
 ## 3. Generic full-memory scan API (`memscan`)
 
@@ -443,7 +574,90 @@ Returns one of: `idle`, `running`, `queued`, `done`.
 - requests are queued; one full scan at a time
 - returns addresses only; the consumer validates and writes
 
-## 4. Known type hashes
+## 4. AOB stratagem-table API
+
+> Requires HD2 Scanner v0.8.0+. Older Scanner builds do not have it — consumers must check
+> `type(S.strat_rec) == 'function'` before calling.
+
+`StratagemSettings` is **not** an LDLD block, so it cannot be broadcast by type hash.
+Scanner instead finds a fixed instruction pair inside `game.dll`'s code sections
+(source: StratagemCooldown 2.1.5) and resolves the **stratagem record pointer array**:
+
+```text
+49 8B 84 C7 ?? ?? ?? ??   mov rax,[r15+rax*8+disp32]
+44 8B 80 C8 00 00 00      mov r8d,[rax+0xC8]
+8B C2 45 85 C0            mov eax,edx / test r8d,r8d
+```
+
+Resolution is **stepped across frames** (2 MB/frame; ~17 frames for the 33 MB code section here),
+so callers never block.
+
+### 4.1 `strat_table_request()`
+
+Starts (or retries) resolution. Idempotent: scanning/ok both return `true`.
+
+### 4.2 `strat_table_status()`
+
+| Field | Description |
+|---|---|
+| `state` | `idle` / `scanning` / `ok` / `failed` |
+| `reason` | failure reason (non-nil when `failed`) |
+| `base` | pointer-array base when `ok` |
+| `r15` / `consumer` / `disp` | intermediate values, for diagnostics |
+| `scanned` / `total` | bytes scanned / to scan |
+| `slots` / `slots_ok` | structural probe: readable pointers among the first 256 slots |
+| `ms` / `frames` | resolution time / frame count |
+
+### 4.3 `strat_table_base()`
+
+Returns `base` when `ok`, else `nil`.
+
+### 4.4 `strat_slot(id)`
+
+```lua
+local ptr, why = S.strat_slot(27)
+```
+
+`slot_ptr(id) = u64 @ table_base + id*8`, with a plausibility check. `id` range `0..255`.
+
+### 4.5 `strat_rec(id, n)`
+
+```lua
+local rec, why = S.strat_rec(27)          -- n defaults to 0xD0
+local pkg  = rec and rec:sub(0xA9, 0xB0)  -- package
+```
+
+Reads the first `n` bytes of the record (`1..0x100`). Known offsets (typelib):
+
+| Offset | Field |
+|---:|---|
+| `+0x00` | id (= array index) |
+| `+0x50` | uses (int32, -1 = unlimited) |
+| `+0x68` / `+0x6C` | cooldown success / fail |
+| `+0xA8` | package |
+| `+0xB0` | icon |
+| `+0xC4` | depends_on (expected 0) |
+| `+0xC8` | additional_stratagem |
+| `+0xCC` | max_in_loadout (expected 0) |
+
+### 4.6 Failure and fallback
+
+Every step fails loudly instead of guessing:
+
+- the AOB matched more than once
+- `disp32` / `lea r15` anchor unreadable
+- `table_base` implausible
+- no readable pointer among the first 256 slots (it was not a pointer array)
+
+Consumers should keep a fallback path (ExoLoadout falls back to a full-memory
+`package` value search). After `state == 'failed'`, `strat_table_request()` may be called again.
+
+### 4.7 Relation to the broadcast API
+
+The AOB path only answers "where is the stratagem table". The table is not an LDLD
+block, so it never appears in `request()` / `poll()` and has no `generation` — consumers
+re-validate the record contents themselves.
+## 5. Known type hashes
 
 | Table | type_hash |
 |---|---:|
@@ -455,7 +669,7 @@ Returns one of: `idle`, `running`, `queued`, `done`.
 | ProjectileSettings | `0xBD4042C2` |
 | ExplosionSettings | `0x2AEA2592` |
 
-## 5. Minimal consumer example
+## 6. Minimal consumer example
 
 ```lua
 local S = rawget(_G, 'HD2Scanner')
@@ -475,3 +689,15 @@ local function frame()
   end
 end
 ```
+
+## 7. UI contract for consumers (since 2026-10-04)
+
+- ⛔ **Do not register `_G.HD2Menu` / `HD2MenuQueue` any more.** That page system (self-drawn panel +
+  object registry) is retired: its renderer `ui.lua` is no longer packaged and `registry.lua` is gone.
+  Registering anyway just creates a page that can never be shown (`rawget(_G,'HD2Menu')` is now `nil`).
+- ✅ **Register into the native `_G.ModOptionsMenu`** (`mom.register_option`). It only supports
+  `toggle` / `choice` / `slider` - there is **no read-only status row** - but `label`, `description`
+  and each `choice` may be **functions**, re-evaluated whenever the ESC menu opens. Park status there.
+- Scanner itself registers 3 rows on the MODS page (for players, not a consumer API):
+  `hd2_scanner.status` (state + click to scan one round now), `hd2_scanner.aob`,
+  `hd2_scanner.diag` (dump state to the log).

@@ -13,16 +13,17 @@ for cand in (r"F:\JS\pylibs", os.path.expandvars(r"%USERPROFILE%\pylibs")):
         sys.path.insert(0, cand)
 from lupa.luajit21 import LuaRuntime
 
+    # ⚠ 2026-10-04：ui / registry 已退役（见 src/ui.lua 顶部横幅）。
+    #   这里**故意不 preload**，测试才等于发布包；要复活浮窗面板请连 build.py 一起加回来。
 ENTRY = "mods/junze/hd2_scanner"
 FILES = {
     ENTRY:                              "hd2_scanner.lua",
     "mods/junze/hd2_scanner/platform":   "platform.lua",
     "mods/junze/hd2_scanner/scan":       "scan.lua",
-    "mods/junze/hd2_scanner/ui":         "ui.lua",
     "mods/junze/hd2_scanner/tab":        "tab.lua",
-    "mods/junze/hd2_scanner/registry":   "registry.lua",
     "mods/junze/hd2_scanner/kernel":     "kernel.lua",
     "mods/junze/hd2_scanner/memscan":    "memscan.lua",
+    "mods/junze/hd2_scanner/aob":        "aob.lua",
 }
 
 

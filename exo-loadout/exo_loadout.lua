@@ -17,7 +17,7 @@
 --  红线：本文件**只读 + 只写自己的目标**，不碰别的字段。
 -- ===========================================================================
 
-local VERSION = '0.7.2'
+local VERSION = '0.8.0'
 local MOD = 'mods/dsh/exo_loadout'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, phase = 'starting', writes = 0, refusals = 0, errs = 0,
@@ -660,6 +660,34 @@ local STRAT_CHUNK   = 256 * 1024
 local STRAT_OVER    = 64
 local STRAT_BUDGET  = 8 * 1024 * 1024   -- 每帧扫描预算，约 0.5~1 ms
 
+-- ★ AOB 优先路径：Scanner 从 game.dll 里解出「战备记录指针数组」，按 ID 直接取记录。
+--   记录首的绝对偏移，与上面那套「相对 package 字段」的偏移一一对应：
+--     +0x00 id    +0x50 use    +0xA8 package    +0xB0 icon
+--     +0xC4 depends_on(=0)     +0xCC max_in_loadout(=0)    +0xC8 additional(= package+32)
+local STRAT_PKG_OFF  = 0xA8     -- = 旧路径的 c（package 字段）
+local STRAT_ICON_OFF = 0xB0
+local STRAT_DEP_OFF  = 0xC4
+local STRAT_MAX_OFF  = 0xCC
+local STRAT_REC_READ = 0xD0     -- 一次读够（覆盖到 +0xCC）
+local STRAT_ID_MAX   = 255      -- 指针数组上界（与参考实现 / Scanner 一致）
+
+local AOB = { api = nil, retry_at = 0, next_try = 0, slot_id = {}, why = nil, hits = 0 }
+
+local function aob_api()
+  if AOB.api then return AOB.api end
+  local now = os.clock()
+  if now < AOB.retry_at then return nil end
+  AOB.retry_at = now + 60
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) == 'table' and type(S.strat_rec) == 'function'
+     and type(S.strat_slot) == 'function' and type(S.strat_table_status) == 'function' then
+    AOB.api = S
+    report('已接上 HD2Scanner：AOB 战备表定位可用（优先路径）', true)
+    return S
+  end
+  return nil
+end
+
 state.strat_hits = state.strat_hits or {}
 state.strat_addr = state.strat_addr or {}
 state.strat_slots = state.strat_slots or {}
@@ -768,6 +796,74 @@ local function strat_validate(body)
   return nil
 end
 
+-- AOB 复核：用 package / icon / 邻字段确认这条记录就是我们找的那台机体。
+-- 命中返回 package 字段地址（记录首 + 0xA8）—— 与旧路径的 c 语义完全一致，
+-- 所以下游 strat_write_additional / strat_write_use 一行都不用改。
+local function strat_aob_probe(S, id, body)
+  local rec = S.strat_rec(id, STRAT_REC_READ)
+  if not rec then return false end
+  if rec:sub(STRAT_PKG_OFF + 1,  STRAT_PKG_OFF + 8)  ~= body._pkg_le  then return false end
+  if rec:sub(STRAT_ICON_OFF + 1, STRAT_ICON_OFF + 8) ~= body._icon_le then return false end
+  if rec:sub(STRAT_DEP_OFF + 1,  STRAT_DEP_OFF + 4)  ~= ZERO4        then return false end
+  if rec:sub(STRAT_MAX_OFF + 1,  STRAT_MAX_OFF + 4)  ~= ZERO4        then return false end
+  local ptr = S.strat_slot(id)
+  if not ptr then return false end
+  return ptr + STRAT_PKG_OFF
+end
+
+-- AOB 直取：返回 package 字段地址；拿不到返回 nil + 原因（不抛错）
+local function strat_aob_find(body)
+  local S = aob_api()
+  if not S then return nil, 'no-scanner' end
+  local okst, st = pcall(S.strat_table_status)
+  if not okst or type(st) ~= 'table' then return nil, 'bad-status' end
+  if st.state ~= 'ok' then
+    local now = os.clock()
+    if st.state ~= 'scanning' and now >= AOB.next_try then
+      AOB.next_try = now + 60
+      pcall(S.strat_table_request)
+      if st.state == 'failed' then
+        report('AOB 战备表解析失败（60 秒后重试，先走兜底）：' .. tostring(st.reason), true)
+      end
+    end
+    return nil, 'table:' .. tostring(st.state)
+  end
+  -- ① 记住过的槽位 / EXO 自带的 id：直取
+  local cached = AOB.slot_id[body.key]
+  if cached then
+    local c = strat_aob_probe(S, cached, body)
+    if c then return c, 'cache' end
+    AOB.slot_id[body.key] = nil
+  end
+  local c = strat_aob_probe(S, body.id, body)
+  if c then AOB.slot_id[body.key] = body.id return c, 'id' end
+  -- ② 全表枚举（一次就记住槽位号，之后走 ①）
+  for id = 0, STRAT_ID_MAX do
+    if id ~= body.id then
+      c = strat_aob_probe(S, id, body)
+      if c then AOB.slot_id[body.key] = id return c, ('scan:%d'):format(id) end
+    end
+  end
+  return nil, 'not-found'
+end
+
+-- AOB 优先填充（返回填上的条数）；只在还缺地址时调用
+local function strat_aob_fill(c, x)
+  local n = 0
+  for _, body in ipairs({ c, x }) do
+    if not state.strat_addr[body.key] then
+      local a, why = strat_aob_find(body)
+      AOB.why = why
+      if a then
+        state.strat_addr[body.key] = a
+        AOB.hits = AOB.hits + 1
+        n = n + 1
+        report(('AOB 定位：%s -> 0x%X（%s）'):format(short_name(body), a, tostring(why)), true)
+      end
+    end
+  end
+  return n
+end
 local function strat_write_additional(carry, extra)
   local c = state.strat_addr[carry.key]
   if not c then return false end
@@ -859,9 +955,19 @@ local function strat_step()
     local a = state.strat_addr[body.key]
     if a and api.read(a + 8, 8) ~= body._icon_le then state.strat_addr[body.key] = nil end
   end
+  -- ★ 优先路径：AOB 直取（Scanner 解出的战备表指针数组）。
+  --   拿不到才轮到下面「全内存搜 package 值」的兜底；每 2 秒试一次，不每帧枚举。
+  if not (state.strat_addr[c.key] and state.strat_addr[x.key]) then
+    if rawget(_G, 'EXO_DISABLE_AOB') ~= true then
+      local now = os.clock()
+      if not state.strat_aob_at or now - state.strat_aob_at >= 2 then
+        state.strat_aob_at = now
+        strat_aob_fill(c, x)
+      end
+    end
+  end
   if not state.strat_addr[c.key] then state.strat_addr[c.key] = strat_validate(c) end
-  if not state.strat_addr[x.key] then state.strat_addr[x.key] = strat_validate(x) end
-  if state.strat_addr[c.key] and state.strat_addr[x.key] then
+  if not state.strat_addr[x.key] then state.strat_addr[x.key] = strat_validate(x) end  if state.strat_addr[c.key] and state.strat_addr[x.key] then
     local wa = strat_write_additional(c, x)
     local w1 = strat_write_use(c)
     local w2 = strat_write_use(x)
@@ -874,7 +980,7 @@ local function strat_step()
       if wa or w1 or w2 then
         report('战备内容搜：目标已写入，扫描自动停止', true)
       else
-        report('战备内容搜：已定位目标，但写入未成功；扫描停止', true)
+        report('兜底内容搜：已定位目标，但写入未成功；扫描停止', true)
       end
     end
     return
@@ -885,7 +991,7 @@ local function strat_step()
     state.strat_hits, state.strat_regions = {}, nil
     if not state.strat_stop_reported then
       state.strat_stop_reported = true
-      report('Scanner 全扫描：未找到目标记录，扫描停止；可在设置里再次手动启动', true)
+      report('兜底全扫描：未找到目标记录，扫描停止（AOB 也没找到，可能需要更新签名）', true)
     end
     return
   end
@@ -895,7 +1001,7 @@ local function strat_step()
   if state.strat_done then
     state.strat_scan_requested = false
     state.strat_hits, state.strat_regions = {}, nil
-    report('战备内容搜：未找到目标记录，扫描停止；可在设置里再次手动启动', true)
+    report('兜底内容搜：未找到目标记录，扫描停止（兜底与 AOB 都没找到，可能需要更新签名）', true)
     return
   end
   strat_scan_step()
@@ -910,6 +1016,14 @@ local function start_strat_scan()
   if not (c and x and c.id ~= x.id) then
     report('全扫描：当前没有有效的携带/附加组合', true)
     return false
+  end
+  -- ★ AOB 优先：能直取就不扫内存（「全扫描只在别的路都走不通时才用」的落点）
+  if rawget(_G, 'EXO_DISABLE_AOB') ~= true then
+    state.strat_aob_at = os.clock()
+    if strat_aob_fill(c, x) == 2 then
+      report('定位：AOB 已直取两条记录，跳过全扫描', true)
+      return true
+    end
   end
   local S = rawget(_G, 'HD2Scanner')
   if type(S) == 'table' and type(S.scan_request) == 'function' then
@@ -967,6 +1081,12 @@ end
 local function frame()
   state.frame = state.frame + 1
   flush_log()
+
+  -- 第一帧就把 Scanner 的 AOB 解析点起来：分帧后台跑，解析好就不用扫内存了
+  if state.frame == 1 then
+    local S0 = aob_api()
+    if S0 then pcall(S0.strat_table_request) end
+  end
 
   -- 「确认」的第 2 步：上一帧刚把 4 个槽位复位成原装，这一帧再覆盖成配置。
   -- 隔一帧是刻意的：同一帧连写两次同一地址，中间那次变化游戏根本看不到。
@@ -1055,6 +1175,7 @@ local function do_initialize()
   state.strat_done, state.strat_ok = false, false
   state.strat_scan_requested, state.strat_scanner_active, state.strat_scanner_used = false, false, false
   state.strat_pair = nil
+  state.strat_aob_at = nil
   if MOD_OPTIONS.refresh_arm_values then pcall(MOD_OPTIONS.refresh_arm_values) end
   report('初始化：已回默认配置并强制写回原装', true)
 end
@@ -1132,7 +1253,7 @@ local function register_mod_options()
   for i, e in ipairs(EXO) do extra_choices[#extra_choices + 1] = e.name end
   mom.register_option(extra_id, { type = 'choice', label = '附加机体', mod = 'EXO 战备自选',
     choices = extra_choices, default = index_of_extra(CFG.extra),
-    description = '可选无；选无时不写附加，并尽量恢复原值。' })
+    description = '可选无；选无时不写附加，并尽量恢复原值。选好后由 AOB 直取记录自动写入，不需要扫描。' })
 
   local function role_body(role)
     return (role == 'carry') and pick_carry() or pick_extra()
@@ -1157,9 +1278,34 @@ local function register_mod_options()
 
   local scan_id, reset_id = 'exo_loadout.scan_now', 'exo_loadout.reset'
   MOD_OPTIONS.scan_id, MOD_OPTIONS.reset_id = scan_id, reset_id
-  mom.register_option(scan_id, { type = 'toggle', label = '开始全扫描（按 Apply 启动）',
+  -- description 是**函数**：MOM 每次开 ESC 菜单都会重算（mod_options_menu API v2）。
+  -- 「灰字 = 不用点 / 亮起来 = 该点了」那套提示搬到这里，反正旧面板已退役。
+  mom.register_option(scan_id, { type = 'toggle', label = '兜底：全内存扫描（正常不用点）',
     mod = 'EXO 战备自选', default = false,
-    description = '全扫描是手动触发的；扫到 package 后只做少量复查。' })
+    description = function()
+      local ok, txt = pcall(function()
+        local head, st = '当前定位方式：', nil
+        if AOB.api then
+          local ok2, s2 = pcall(AOB.api.strat_table_status)
+          st = (ok2 and type(s2) == 'table') and s2 or nil
+        end
+        if not AOB.api then
+          head = head .. '无 AOB（Scanner 缺失或版本太旧）→ 只有本开关能兜底'
+        elseif st and st.state == 'ok' then
+          head = head .. 'AOB 直取已就绪 —— 不需要点这个开关'
+        else
+          head = head .. 'AOB ' .. tostring(st and st.state or '?')
+            .. (st and st.reason and ('（' .. tostring(st.reason) .. '）') or '')
+            .. ' → 需要本开关兜底'
+        end
+        return head .. '\n\n正常情况下附加战备不需要扫描：Scanner 用 AOB 直取记录后自动写入。'
+          .. '\n只有出现上面那种「需要兜底」的情况（或日志里 AOB 报错 / not-found）时，'
+          .. '才点它退回旧的「全内存搜 package 值」（较慢，且仍需手动触发）。'
+      end)
+      if not ok or type(txt) ~= 'string' or txt == '' then return '战备定位状态读不出来（看 ExoLoadout.log）' end
+      if #txt > 390 then txt = txt:sub(1, 390) end
+      return txt
+    end })
   mom.register_option(reset_id, { type = 'toggle', label = '初始化（原装 + 恢复战备字段 + CFG 复位）',
     mod = 'EXO 战备自选', default = false,
     description = '写回原装手臂、恢复附加/use 原值，并把 CFG 回默认。' })
@@ -1278,138 +1424,6 @@ local function register_mod_options()
 
   report('ModOptionsMenu: EXO 设置已注册到原生 MODS 页（左右手分池）', true)
 end
-
-local function menu_attach(menu)
-  menu.register{
-    id = 'exo_loadout', title = 'EXO 战备自选', order = 40, api = 1,
-    status = function()
-      local sc = state.selfcheck
-      if sc and #sc.bad > 0 then return { text = '自检失败', tone = 'bad', note = sc.bad[1] } end
-      local c, x = pick_carry(), pick_extra()
-      local ready = c and (x or CFG.extra == 'none')
-      return { text = ready and '就绪' or '未配置', tone = ready and 'ok' or 'warn',
-               note = ready and (c.name .. ' + ' .. (x and x.name or '无')) or nil }
-    end,
-    build = function(pctx)
-      local D = tonumber(pctx and pctx.detail) or 2
-      if D < 1 or D > 3 then D = 2 end
-      local rows = {}
-      local function add(l, v, tt, note, min)
-        if D >= (min or 2) then
-          rows[#rows+1] = { label = l, value = tostring(v), tone = tt or 'text', note = note }
-        end
-      end
-      local function hdr(s2, min)
-        if D >= (min or 2) then
-          rows[#rows+1] = { label = s2, tone = 'dim', selectable = false }
-        end
-      end
-      local c, x = pick_carry(), pick_extra()
-
-      -- ---------------------------------------------------------- 档 1 / 档 2：配置
-      -- ⚠ 档 >=2 用**可调行**承载这两项（值列本来就显示当前选择），不另加只读行
-      --   —— label 相同既冗余、又会让"按 label 找行"的代码抓到错的那一行。
-      --   两个标题也合并成一个，不然档 2 下会出现空标题。
-      if c and x and c.id == x.id then add('自引用', '禁止', 'bad', '附加不能等于携带', 1) end
-
-      -- ---------------------------------------------------------- 档 2：可调项
-      -- ⚠ choice 行的备注列由 normalize_rows 接管（恒为 ▾ 展开 / ▴ 收起），
-      --   所以提示只能写在**标签**或**值**里，别指望 note。
-      if D >= 2 and c and (not x or c.id ~= x.id) then
-        hdr('── 当前配置（点着改，存 cfg 1 秒热生效）──', 1)
-
-        local carry_choices = {}
-        for _, e in ipairs(EXO) do carry_choices[#carry_choices + 1] = e.name end
-        rows[#rows + 1] = { label = '携带机体', kind = 'choice',
-          choices = carry_choices,
-          get = function() local b3 = pick_carry() return b3 and b3.name or '' end,
-          set = function(v) set_carry(v) end }
-
-        local ex_choices = { '无' }
-        for _, e in ipairs(EXO) do
-          if e.key ~= c.key then ex_choices[#ex_choices + 1] = e.name end   -- 无 + 三选一
-        end
-        rows[#rows + 1] = { label = '附加机体', kind = 'choice',
-          choices = ex_choices,
-          get = function() local b3 = pick_extra() return b3 and b3.name or '无' end,
-          set = function(v) set_extra(v) end }
-
-        for _, body in ipairs(x and { c, x } or { c }) do
-          for _, sl in ipairs({ 'L', 'R' }) do
-            local labels = {}
-            for _, it in ipairs(candidates(sl)) do labels[#labels + 1] = arm_name(it) end
-            local b3, s3 = body, sl
-            rows[#rows + 1] = {
-              label = short_name(b3) .. ((s3 == 'L') and ' 左臂' or ' 右臂'),
-              kind = 'choice', choices = labels,
-              get = function() return arm_name(arm_item(b3, s3)) end,
-              set = function(v) set_arm(b3, s3, v) end }
-          end
-        end
-
-      else
-        -- 档 1（或配置非法时）：只读显示，不可调
-        hdr('── 当前配置 ──', 1)
-        add('携带机体', c and c.name or '?', c and 'ok' or 'bad', nil, 1)
-        add('附加机体', x and x.name or '?', x and 'ok' or 'bad', nil, 1)
-      end
-
-      -- ---------------------------------------------------------- 档 3：诊断
-      hdr('── 四台机体（实测数据）──', 3)
-      for _, e in ipairs(EXO) do
-        add(e.name, ('战备%d  recIdx=%d'):format(e.id, e.rec_idx), 'dim', '实体 ' .. e.ent, 3)
-      end
-      if c then
-        hdr('── 锚点 / 校验 ──', 3)
-        add('左臂 node/pad', ('%d / %d'):format(c.left.node, c.left.pad), 'dim', '两台共用一套', 3)
-        add('右臂 node/pad', ('%d / %d'):format(c.right.node, c.right.pad), 'dim', '两台共用一套', 3)
-        add('战备 package', c.pkg, 'dim', short_name(c), 3)
-        add('战备 icon', c.icon, 'dim', '布局复核', 3)
-      end
-      hdr('── 前置 ──', 3)
-      add('Scanner', SCAN.api and '已接上' or '无', SCAN.api and 'ok' or 'bad', 'MountComponentData', 3)
-      add('战备附加', '自扫', 'warn', '新探针待建', 3)
-      add('cfg', 'ExoLoadout.cfg', 'dim', '1 秒热生效', 3)
-      add('poll 次数', SCAN.polls, 'dim', nil, 3)
-
-      -- ---------------------------------------------------------- 立刻写一次（三档都有）
-      rows[#rows + 1] = { label = '立刻写一次', kind = 'action', on_click = function()
-        if not SCAN.api then report('立刻写一次：没有 Scanner 前置，写不了', true) return end
-        local n = apply_all('config')
-        recheck()
-        report(('立刻写一次：处理 %d 份表，累计写 %d 处'):format(n, state.writes), true)
-      end }
-
-      if D >= 2 then
-        rows[#rows + 1] = { label = '开始全扫描（手动）', kind = 'action', on_click = function()
-          start_strat_scan()
-        end }
-      end
-
-      rows[#rows + 1] = { label = '确认（先复位再覆盖）', kind = 'action', on_click = function()
-        if not SCAN.api then report('确认：没有 Scanner 前置', true) return end
-        local n = apply_all('vanilla')      -- 第 1 步：4 个槽位全写回原装
-        state.confirm_phase = 2             -- 第 2 步：交给下一帧
-        report(('确认：第 1 步（复位为原装）完成，处理 %d 份表；下一帧覆盖为配置'):format(n), true)
-      end }
-
-      rows[#rows + 1] = { label = '初始化（改回原装 + cfg 复位）', kind = 'action', on_click = function()
-        do_initialize()
-      end }
-      return rows
-    end,
-  }
-end
-
-local menu = rawget(_G, 'HD2Menu')
-if type(menu) == 'table' and type(menu.register) == 'function' then
-  menu_attach(menu)
-else
-  local q = rawget(_G, 'HD2MenuQueue')
-  if type(q) ~= 'table' then q = {} rawset(_G, 'HD2MenuQueue', q) end
-  q[#q + 1] = { id = 'exo_loadout', attach = menu_attach }
-end
-
 -- ---------------------------------------------------------------- 挂载
 local orig = update
 if type(orig) == 'function' then
@@ -1428,4 +1442,4 @@ if type(orig) == 'function' then
   end
 end
 
-report(('已加载 v%s（ModOptionsMenu 适配已就绪；旧面板保留回退）'):format(VERSION), true)
+report(('已加载 v%s（ModOptionsMenu 适配；HD2Menu 页面已退役）'):format(VERSION), true)

@@ -293,6 +293,8 @@ function M.new(ctx)
         end
     end
 
+    -- ★ 不订阅任何表也能催一轮：MOM 的「立刻扫一轮」按钮用它（2026-10-04）
+    function API.declare_need() K.urgent = true end
     function API.status() return K end
     function API.published() return PUB end
     function API.read(addr, n) return U.mem_read(addr, n) end
@@ -332,61 +334,6 @@ function M.new(ctx)
             probe_begin(urgent)
             K.state = 'PROBING'
         end
-    end
-
-    -- ---------------------------------------------------------------- ⑥ 面板页
-    local function yn(b) return b and '是' or '否' end
-    if ctx.registry and ctx.registry.api then
-        ctx.registry.api.register{
-            id = 'scanner_kernel', title = '扫描内核', order = 1,
-            status = function()
-                return { text = K.state, tone = (K.found > 0) and 'ok' or 'dim',
-                         note = string.format('%d ms / 命中 %d', math.floor(K.ms + 0.5), K.found) }
-            end,
-            build = function()
-                local rows = {}
-                local function add(l, v, t) rows[#rows+1] = { label = l, value = tostring(v), tone = t or 'text' } end
-                local function hdr(s) rows[#rows+1] = { label = s, tone = 'dim', selectable = false } end
-
-                hdr('── 状态机 ──')
-                add('状态', K.state, K.found > 0 and 'ok' or 'dim')
-                add('轮次', K.rounds)
-                add('探针周期', K.interval .. ' 秒')
-                local left = math.max(0, K.next_at - os.clock())
-                add('距下次探针', string.format('%.1f 秒', left), 'dim')
-                add('urgent 挂起', yn(K.urgent), K.urgent and 'warn' or 'dim')
-                if SH.active then
-                    add('分片中', string.format('%s  %d/%d  (第 %d 帧, 每帧 %d 条)',
-                        SH.phase, SH.i, #(SH.regions or {}), SH.frames,
-                        SH.urgent and SHARD_URGENT_STEP or SHARD_STEP), 'warn')
-                end
-                add('掉过几份', K.lost, K.lost > 0 and 'warn' or 'dim')
-
-                hdr('── 上一轮 ──')
-                add('CPU 耗时', string.format('%.0f ms', K.ms or 0))
-                add('墙上耗时', string.format('%.1f s', (K.wall or 0) / 1000), 'dim',
-                    '分 ' .. tostring(K.shard_frames or 1) .. ' 帧')
-                add('扫区段', K.regions)
-                add('读次数', K.reads, 'dim', K.reads > 0 and '（每区段先探 1 次）' or nil)
-                add('命中表', K.found)
-
-                hdr('── 已发布 ──')
-                local any = false
-                for _, e in ipairs(COMPONENT) do
-                    local s = PUB[e.hash]
-                    if s then any = true add(e.name, string.format('%d 份', #s.entries), 'ok') end
-                end
-                for _, e in ipairs(STANDALONE) do
-                    local s = PUB[e.hash]
-                    if s then any = true add(e.name, string.format('%d 份', #s.entries), 'ok') end
-                end
-                if not any then add('（还没有）', '', 'dim') end
-
-                rows[#rows+1] = { label = '立刻探一次', kind = 'action',
-                    on_click = function() K.urgent = true log('kernel: 手动触发一次探针') end }
-                return rows
-            end,
-        }
     end
 
     log(string.format('kernel: 就绪（阶段 1，不做 HUNT）；首个探针 %.0f 秒后', WARMUP))

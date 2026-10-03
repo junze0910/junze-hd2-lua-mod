@@ -1,8 +1,9 @@
-df2f1b8bf9c07a4c5ca91291aa7cda97f833ebe6dc97f3adf18c449bd498d7f4  AC8-Rack-Backpack-v2.0.zip
-80e6cbcc47e806cdcb90c5be60e7405589553d7761853da94faab28d6818cf0a  ExoLoadout-v0.7.2.zip
+dd0e94b00519218cd0b5576fe70f9f42565fb8c51d4329c2b9ca334d90b463cb  AC8-Rack-Backpack-v2.1.zip
+db141867ddbd024359a280d2c81ee2f79f82744b81831309f23299cf5607c69f  Custom-Supply-v0.1b.zip
+1118b3dc1bd371914841eb187249d7bf33e08eb5ae0d8e82ff8f13a2353e03bd  ExoLoadout-v0.8.0.zip
+5e618015267844305b5900e0fc76fe22fda0debbbeae8e3895ecf4b50c1cece5  Guard-Dog-MG43-v2.1.zip
 686dc8b097880c16531d24b42cafef3b5dd0d8ee4ef6f9d0e2d49f9eeb06aa07  GuardDogLoadout-v1.0.1.zip
-2f9a2e42f522ecf38e5e609d014a61904825fbb027523a0dc99bfac812ac0594  Guard-Dog-MG43-v2.0.zip
-dfc6f878f1f37a6b6bd72fc2fbc0652dce33a3329fef4d62ec0df758ca3eff8d  HD2-Scanner-v0.7.0.zip
+bd0765bdd1aaa242148a99b5ea1c17e2f0f869c1f16ac2d89ee6e7c6808f04b5  HD2-Scanner-v0.8.0.zip
 529271c1c95dba134235b982e97d7055a48e630a15f68e63ebb02d96a87b75b7  More-Balanced-Exosuit-Emancipator-v1.2.zip
 8e30ed8a82f5a381dff3f7c16f46a261d64949191d6c529a150aace64625b118  More-Balanced-Exosuit-Patriot-v1.2.zip
 0037f1d3b948bb7788ac614457696dd241e7aa08190b3054d763fd5d7809b774  No-Large-Piercing-Medium-v1.4.zip

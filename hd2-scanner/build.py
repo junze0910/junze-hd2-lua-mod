@@ -27,11 +27,11 @@ ENTRY = "mods/junze/hd2_scanner"
 # 资源名 -> 源文件（相对 src/）。这些**不带**声明头。
 MODULES = {
     "mods/junze/hd2_scanner/platform": "platform.lua",
-    "mods/junze/hd2_scanner/registry": "registry.lua",
     "mods/junze/hd2_scanner/kernel":   "kernel.lua",
     "mods/junze/hd2_scanner/scan":     "scan.lua",
     "mods/junze/hd2_scanner/tab":      "tab.lua",
     "mods/junze/hd2_scanner/memscan":  "memscan.lua",
+    "mods/junze/hd2_scanner/aob":      "aob.lua",
 }
 DISPLAY = "HD2 Scanner"
 

@@ -1,18 +1,23 @@
 -- HD2-Addon: mods/junze/hd2_scanner
 -- ===========================================================================
---  HD2 Scanner —— ESC 菜单宿主（设计见 docs/MENU-PANEL-设计定稿.md）
+--  HD2 Scanner —— 数据表定位/广播 + 通用全量扫描 + AOB 战备表（前置服务 mod）
 --
---  职责：页面宿主（ESC 第 4 / 第 5 页签，被占则自绘浮动面板）+ _G.HD2Menu 注册接口。
---        本体零内容 —— 本文件不认识任何业务 mod。
+--  对外只暴露 `_G.HD2Scanner`；消费者自己负责校验与写入。
 --
---  红线：只写 UI 结构（labels/state/flag），绝不写游戏数据表。
+--  ⚠ 界面：自绘面板 / `_G.HD2Menu` 页面体系 **2026-10-04 已退役**
+--     （渲染宿主 ui.lua 早已不在发布包里，页面永远显示不出来）。
+--     消费者一律注册 `_G.ModOptionsMenu`（原生 MODS 页），不要再注册 HD2Menu。
+--     本 mod 自己的状态/动作注册在下面 §4.6。
 --
---  ⚠ 本文件只是**入口 + 编排**；真正的逻辑在同一个 archive 的另外 5 个资源里：
+--  红线：本文件不写游戏数据表；全包唯一会写游戏内存的是 tab.lua 的页签认领。
+--
+--  ⚠ 本文件只是**入口 + 编排**；真正的逻辑在同一个 archive 的另外 6 个资源里：
 --       mods/junze/hd2_scanner/platform   平台层（ffi/kernel32/内存/日志）
 --       mods/junze/hd2_scanner/scan       签名扫描 + MENU/TAB/FONTS 解码器
---       mods/junze/hd2_scanner/ui         user32 输入 + stingray 渲染
 --       mods/junze/hd2_scanner/tab        菜单探测 + 页签落位
---       mods/junze/hd2_scanner/registry   插件注册表 / _G.HD2Menu
+--       mods/junze/hd2_scanner/kernel     数据表定位 + 广播（只读）
+--       mods/junze/hd2_scanner/memscan    通用全量内存扫描服务
+--       mods/junze/hd2_scanner/aob        game.dll AOB 定位（战备记录指针数组）
 --     这些资源**不带** `-- HD2-Addon:` 声明，所以 loader 不会把它们当独立 addon。
 -- ===========================================================================
 
@@ -20,18 +25,13 @@ local MOD = 'mods/junze/hd2_scanner'
 if rawget(_G, MOD) then return end
 
 local P = {
-    version  = '0.7.0',
+    version  = '0.8.0',
     api      = 1,
     status   = 'starting',
     mode     = 'float',      -- 'float' | 'tab'
     trigger  = nil,          -- 'menu'（跟随 ESC）| 'hotkey'
-    pages    = {},
-    by_id    = {},
-    revision = 0,
-    cursor   = 1,
-    visible  = false,
+    visible  = false,        -- 自绘面板（退役中，见 §4.6 的 MOM 面板）
     hotkey   = 0x78,         -- VK_F9
-    page     = 'root',
 }
 rawset(_G, MOD, P)
 
@@ -51,17 +51,20 @@ end
 local RES = {
     platform = 'mods/junze/hd2_scanner/platform',
     scan     = 'mods/junze/hd2_scanner/scan',
-    ui       = 'mods/junze/hd2_scanner/ui',
     tab      = 'mods/junze/hd2_scanner/tab',
-    registry = 'mods/junze/hd2_scanner/registry',
     kernel   = 'mods/junze/hd2_scanner/kernel',
     memscan  = 'mods/junze/hd2_scanner/memscan',
+    aob      = 'mods/junze/hd2_scanner/aob',
 }
+local RES_N = 0
+for _ in pairs(RES) do RES_N = RES_N + 1 end
+
 
 local ctx = { P = P, loader = loader, mdl = mdl, RES = RES }
 
 local function load_module(key)
     local name = RES[key]
+    if not name then return nil, key .. ': 已退役（不在 RES 里）' end   -- 例：ui（2026-10-04）
     local ok, mod = pcall(require, name)
     if ok and type(mod) == 'table' and type(mod.new) == 'function' then return mod end
     return nil, name .. ': ' .. tostring(mod)
@@ -101,151 +104,39 @@ do
         log('memscan unavailable: ' .. tostring(e))
     end
 end
+
+local AOB
+do
+    local m, e = load_module('aob')
+    if m then
+        local ok, val = pcall(m.new, ctx)
+        if ok and val then AOB = val ctx.aob = AOB else log('aob.new 失败: ' .. tostring(val)) end
+    else
+        log('aob unavailable: ' .. tostring(e))
+    end
+end
 local MENU, TAB, FONTS = S.MENU, S.TAB, S.FONTS
 local text_section = S.text_section
 local GAME, game_open, mem_read, hex8 = U.GAME, U.game_open, U.mem_read, U.hex8
 
--- ---------------------------------------------------------------------------
--- 3. 页面内容（①a：ui 不认识 registry，只调 ctx.rows()）
--- ---------------------------------------------------------------------------
-local function build_root_rows()
-    local rows = {}
-    if #P.pages == 0 then
-        rows[#rows+1] = { label = '(还没有 mod 注册页面)', tone = 'dim', selectable = false }
-    end
-    for _, page in ipairs(P.pages) do
-        local st
-        if type(page.status) == 'function' then
-            local ok, v = pcall(page.status)
-            if ok and type(v) == 'table' then st = v end
-        end
-        rows[#rows+1] = {
-            label = page.title,
-            value = st and st.text or (page.build and '>' or ''),
-            tone  = st and st.tone or (page.build and 'text' or 'dim'),
-            note  = st and st.note or nil,
-            open  = page.build ~= nil,
-            _page = page,
-        }
-    end
-    return rows, 'HD2 MENU'
-end
-
--- ---------------------------------------------------------------------------
--- 3.4 行规范化：把插件的「可调项」变成能看懂能点的行
---      kind='action'  点击执行 on_click
---      kind='toggle'  点击取反（需要 get/set）
---      kind='choice'  点击展开下拉，选一个就设上（需要 choices/get/set）
--- ---------------------------------------------------------------------------
-local EXPAND = { page = nil, index = nil }      -- 哪个下拉展开了
-
-local function normalize_rows(page, rows)
-    local out = {}
-    for i = 1, #rows do
-        local row = rows[i]
-        if type(row) == 'table' then
-            local kind = row.kind
-            -- 取当前值
-            if (kind == 'choice' or kind == 'toggle') and type(row.get) == 'function' then
-                local ok, v = pcall(row.get)
-                row.value = ok and tostring(v) or '?'
-            end
-            local open = (EXPAND.page == page.id and EXPAND.index == i)
-
-            if kind == 'choice' then
-                row.note = open and '▴ 收起' or '▾ 展开'
-                if type(row.on_click) ~= 'function' then
-                    row.on_click = function()
-                        if open then EXPAND.page, EXPAND.index = nil, nil
-                        else EXPAND.page, EXPAND.index = page.id, i end
-                    end
-                end
-            elseif kind == 'toggle' then
-                row.note = '点击切换'
-                if type(row.on_click) ~= 'function' then
-                    row.on_click = function()
-                        local ok, v = pcall(row.get)
-                        if ok and type(row.set) == 'function' then pcall(row.set, not v) end
-                    end
-                end
-            elseif kind == 'action' and type(row.on_click) == 'function' then
-                row.note = row.note or '▸'
-            end
-
-            out[#out + 1] = row
-
-            -- 展开的选项：插在它下面
-            if kind == 'choice' and open then
-                local cur = row.value
-                for _, c in ipairs(row.choices or {}) do
-                    local cs = tostring(c)
-                    out[#out + 1] = {
-                        label = '      ' .. cs .. ((cs == cur) and '   ✓' or ''),
-                        value = '',
-                        tone  = (cs == cur) and 'ok' or 'dim',
-                        on_click = function()
-                            if type(row.set) == 'function' then pcall(row.set, c) end
-                            EXPAND.page, EXPAND.index = nil, nil
-                        end,
-                    }
-                end
-            end
-        end
-    end
-    return out
-end
-
--- 面板自己的配置落盘（面板也是"插件"，自己的配置自己存）
--- ⚠⚠ local 必须声明在【所有用它的函数之前】（Lua 的词法作用域是位置性的，不是文本顺序）。
---   2026-10-02 实机踩到：cfg_save(L192) 和 build_page_rows(L208) 都用了 CFG，
---   而 local CFG 原本在 L237 —— 于是那两处的 CFG 解析成【全局 nil】。
---   症状：每次面板渲染页面都抛 `attempt to index global 'CFG'`，页面画不出来。
---   所以这里先把两个 local 前置声明，具体赋值留在下面原来的位置。
+-- 面板/开关的配置落盘（读在下面 §3.5，写在这里）
+-- ⚠⚠ local 必须声明在【所有用它的函数之前】（Lua 的词法作用域是位置性的）：
+--   2026-10-02 实机踩到过 —— 忘了前置声明，下面所有 CFG 引用会静默变成全局 nil。
 local CFG, CFG_FILE
 
 local function cfg_save()
     pcall(function()
         local f = io.open(CFG_FILE, 'w')
         if not f then return end
-        f:write('# HD2 Scanner - 改完 1 秒内热生效\n')
+        f:write('# HD2 Scanner - 改完 1 秒内热生效，不用重编译\n')
+        f:write('# 由面板/MOM 选项写回；手工编辑同样有效\n')
         f:write('draw='        .. (CFG.draw        and 'on' or 'off') .. '\n')
         f:write('claim='       .. (CFG.claim       and 'on' or 'off') .. '\n')
         f:write('probe='       .. (CFG.probe       and 'on' or 'off') .. '\n')
         f:write('allow_5th='   .. (CFG.allow_5th   and 'on' or 'off') .. '\n')
         f:write(string.format('hotkey=0x%X\n', CFG.hotkey))
-        f:write('detail=' .. tostring(CFG.detail or 2) .. '\n')
         f:close()
     end)
-end
-
-local function build_page_rows(page)
-    if type(page.build) == 'function' then
-        local pctx = {
-            id    = page.id,
-            log   = function(s) log('[' .. page.id .. '] ' .. tostring(s)) end,
-            cheap = true,
-            detail = CFG.detail or 2,   -- ★ 插件靠这个决定自己那一页显示到第几档
-        }
-        local ok, rows = pcall(page.build, pctx)
-        if ok and type(rows) == 'table' then
-            page.fails = 0
-            -- 子页统一在最后加一行可点的「返回」（键盘的 Backspace 会和游戏菜单冲突）
-            rows[#rows + 1] = { label = '‹ 返回', action = 'back', tone = 'dim' }
-            return normalize_rows(page, rows), page.title
-        end
-        page.fails = (page.fails or 0) + 1
-        if page.fails == 1 then log('plugin build failed: ' .. page.id .. ': ' .. tostring(rows)) end
-        if page.fails >= 20 then page.disabled = 'build keeps failing' end
-        return { { label = '(build failed: ' .. tostring(rows) .. ')', tone = 'bad' } }, page.title
-    end
-    return { { label = '(这一页没有内容)', tone = 'dim' } }, page.title
-end
-
-local function current_rows()
-    if P.page == 'root' then return build_root_rows() end
-    local page = P.by_id[P.page]
-    if not page or page.disabled then P.page = 'root' return build_root_rows() end
-    return build_page_rows(page)
 end
 
 -- ---------------------------------------------------------------------------
@@ -253,8 +144,7 @@ end
 --     %LOCALAPPDATA%\CowboyBingus\Helldivers2\HD2Scanner.cfg
 -- ---------------------------------------------------------------------------
 CFG_FILE = U.BASE .. '/HD2Scanner.cfg'
-CFG = { draw = false, claim = false, probe = true, allow_5th = false, hotkey = 0x78,
-              detail = 2 }      -- 面板详情档位：1 简 / 2 标准 / 3 诊断（插件通过 pctx.detail 拿到）
+CFG = { draw = false, claim = false, probe = true, allow_5th = false, hotkey = 0x78 }
 --           默认关浮窗（用户要求移除浮动面板）
 local CFG_AT = -10
 
@@ -269,7 +159,6 @@ local function cfg_write_default()
         f:write('probe=on       # 每帧还要不要读 MenuSystem\n')
         f:write('allow_5th=off  # 允许占第 5 页签（实测会崩，别开）\n')
         f:write('hotkey=0x78    # 0x78 = F9，仅在探不到 MenuSystem 时用\n')
-        f:write('detail=2       # 详情档位 1/2/3：1 只看状态+动作，2 加关键信息，3 全部内部细节\n')
         f:close()
     end)
 end
@@ -286,9 +175,6 @@ local function cfg_load()
         if k and v and v ~= '' then
             if k == 'hotkey' then
                 CFG.hotkey = tonumber(v) or CFG.hotkey
-            elseif k == 'detail' then
-                local d = tonumber(v)                       -- ⚠ 数字型，不能走下面那个布尔分支
-                if d and d >= 1 and d <= 3 then CFG.detail = d end
             else
                 CFG[k] = (v == 'on' or v == 'yes' or v == 'true')
             end
@@ -306,11 +192,9 @@ end
 
 ctx.flush     = U.log_flush
 ctx.cfg       = CFG
-ctx.flush     = U.log_flush
-ctx.allow_5th = false      -- 由 cfg 覆盖，见下面
-ctx.rows     = current_rows
-ctx.rows_key = function() return tostring(P.revision) .. '|' .. tostring(P.page) end
-P.rows, P.rows_key = ctx.rows, ctx.rows_key       -- 便于实机时手动调用/排查
+-- ⚠ 必须在这里同步：tab.lua 的 M.new(ctx) 紧接着就会把它读走（2026-10-04 修：
+--   以前这里写死 false + 注释「由 cfg 覆盖」，但全文件再没人覆盖过 -> allow_5th 永远无效）
+ctx.allow_5th = CFG.allow_5th == true
 
 -- ui 是**可选**模块：draw=off 时连 require 都不做 —— 连 ffi.load('user32') 都不会碰。
 local UI = nil
@@ -339,16 +223,6 @@ do
     TB = val
 end
 ctx.tab = TB
-local RG
-do
-    local m, e = load_module('registry')
-    if not m then P.status = 'failed: ' .. e log(P.status) return P end
-    local ok, val = pcall(m.new, ctx)
-    if not ok then P.status = 'failed: registry.new: ' .. tostring(val) log(P.status) return P end
-    RG = val
-end
-ctx.registry = RG
-local _G_HD2Menu = RG.api
 
 -- ---------------------------------------------------------------------------
 -- 4.2 扫描内核（阶段 1：只读、偏移直读 + 广播；设计见 SCANNER-设计定稿 §4/§5）
@@ -369,116 +243,176 @@ do
                 K.scan_cancel  = function(id)  return MS.cancel(id) end
                 K.scan_status  = function(id)  return MS.status(id) end
             end
+            if AOB then
+                -- ★ AOB 战备表定位：game.dll 里解出记录指针数组，按 ID 直取（见 aob.lua）
+                K.strat_table_request = function() return AOB.request() end
+                K.strat_table_status  = function() return AOB.status() end
+                K.strat_table_base    = function() return AOB.base() end
+                K.strat_slot          = function(id) return AOB.slot(id) end
+                K.strat_rec           = function(id, n) return AOB.rec(id, n) end
+            end
             rawset(_G, 'HD2Scanner', K)      -- ★ 对外接口：其它 mod 从这里拿地址
             log('_G.HD2Scanner 已导出')
         end
     end
 end
 
+
 -- ---------------------------------------------------------------------------
--- 4.5 面板把自己也注册成一个插件 —— 它的"扫描状态"就在这一页
+-- 4.6 ModOptionsMenu（原生 MODS 页）—— 只注册 3 行：状态 / AOB / 诊断
+--
+--   ⚠ MOM 只支持 toggle / choice / slider，**没有只读状态行**；但它的 label 与
+--     description 可以是**函数**，每次打开 ESC 菜单时重算（mod_options_menu API v2，
+--     见其 translation.refresh）。状态就挂在这两个函数上 —— 所以「状态行」同时
+--     也是个动作（点一下 = 立刻扫一轮），不然 MOM 里没有纯展示位。
+--   ⚠ 注册后不能注销、不能改 kind；id 必须稳定，函数必须自己兜异常
+--     （MOM 侧会 pcall，但返回 nil/超长只会退回旧文本，注册期还会直接失败）。
+--   ⚠ 这里注册的就是 HD2Menu 那套页面的替代品（2026-10-04 退役，见文件头）。
 -- ---------------------------------------------------------------------------
-local function yn(b) return b and 'OK' or '失败' end
+local MOM = { registered = false, prefix = 'hd2_scanner.' }
+local MOM_NAME = 'HD2 Scanner（前置）'
 
-RG.api.register{
-    id    = 'hd2_scanner',
-    title = 'HD2 Scanner',
-    order = 0,                       -- 排最前
-    status = function()
-        local sc = P.selfcheck
-        local ok = sc and sc.ok == sc.total
-        return { text = ok and '正常' or '有差异',
-                 tone = ok and 'ok' or 'warn',
-                 note = 'v' .. P.version }
-    end,
-    build = function()
-        local rows = {}
-        local function add(label, value, tone, note)
-            rows[#rows+1] = { label = label, value = value, tone = tone or 'text', note = note }
-        end
-        local function hdr(txt) rows[#rows+1] = { label = txt, tone = 'dim', selectable = false } end
+local function mom_tables()
+    local n = 0
+    if K and K.published then
+        for _ in pairs(K.published()) do n = n + 1 end
+    end
+    return n
+end
 
-        hdr('── 本体 ──')
-        add('版本', P.version, 'text')
-        add('宿主', loader and 'Bingus Shared Loader' or (mdl and 'MDL' or '无'),
-            loader and 'text' or 'warn')
-        add('状态', tostring(P.status), P.errs and P.errs > 0 and 'warn' or 'ok')
-        add('错误计数', tostring(P.errs or 0), (P.errs or 0) > 0 and 'bad' or 'dim')
+local function mom_aob_line()
+    if not AOB then return '战备表  AOB 模块未装载' end
+    local st = AOB.status()
+    if st.state == 'ok' then
+        return string.format('战备表  AOB ok · base 0x%X · 槽位 %d/%d · %.0f ms',
+            st.base or 0, st.slots_ok or 0, st.slots or 0, st.ms or 0)
+    elseif st.state == 'scanning' then
+        return string.format('战备表  AOB 解析中 %.1f / %.1f MB',
+            (st.scanned or 0) / 1048576, (st.total or 0) / 1048576)
+    end
+    return '战备表  AOB ' .. tostring(st.state)
+        .. (st.reason and (' · ' .. tostring(st.reason)) or '')
+end
 
-        hdr('── 扫描（game.dll 签名）──')
-        local sc = P.scan
-        if sc then
-            add('代码段', string.format('%.1f MB @ 0x%X', sc.text_size / 1048576, sc.text_rva), 'dim')
-            add('解析耗时', string.format('%.0f ms', sc.ms), sc.ms < 500 and 'ok' or 'warn')
-            add('MenuSystem',   yn(sc.menu), sc.menu and 'ok' or 'bad')
-            add('ESC 页签',     yn(sc.tab),  sc.tab  and 'ok' or 'bad')
-            add('字体初始化器', yn(sc.font), sc.font and 'ok' or 'bad')
+-- MOM 的 description（≤400 字符）：整块状态，开菜单时重算
+local function mom_status_text()
+    local ok, txt = pcall(function()
+        local out = {}
+        local ks = K and K.status and K.status() or nil
+        if ks then
+            out[#out+1] = string.format('内核  %s · 第 %d 轮 · 表 %d 张 · 上轮 %.0f ms / 墙上 %.1f s',
+                tostring(ks.state), ks.rounds or 0, mom_tables(), ks.ms or 0, (ks.wall or 0) / 1000)
+            out[#out+1] = string.format('探针  区段 %d · 读 %d 次 · 分 %d 帧 · 掉过 %d 份 · 周期 %d s',
+                ks.regions or 0, ks.reads or 0, ks.shard_frames or 0, ks.lost or 0, ks.interval or 0)
         else
-            add('（还没扫描）', '', 'dim')
+            out[#out+1] = '内核  未装载（缺 ffi/kernel32？）'
         end
+        out[#out+1] = mom_aob_line()
         local chk = P.selfcheck
-        if chk then
-            local okp = chk.ok == chk.total
-            add('自检比对', string.format('%d/%d', chk.ok, chk.total), okp and 'ok' or 'bad',
-                okp and '与 MDL 基准逐位一致' or '见 HD2Scanner.log')
-        end
+        out[#out+1] = chk and string.format('自检  %d/%d %s', chk.ok, chk.total,
+                (chk.ok == chk.total) and '与 MDL 基准逐位一致' or '有差异，见日志')
+            or '自检  尚未运行（进过一局才会跑）'
+        local sc = P.scan
+        out[#out+1] = string.format('环境  %s / API %d · Scanner v%s · %s',
+            loader and 'BSL' or (mdl and 'MDL' or '无宿主'), P.api, P.version,
+            sc and string.format('game.dll .text %.1f MB', sc.text_size / 1048576) or 'game.dll 未解析')
+        out[#out+1] = string.format('界面  菜单探针 %s · 页签 %s · 自绘浮窗 %s',
+            CFG.probe ~= false and '开' or '关',
+            CFG.claim and '已开（需重开游戏）' or '关',
+            CFG.draw and '开' or '关')
+        return table.concat(out, '\n')
+    end)
+    if not ok or type(txt) ~= 'string' or txt == '' then return '状态读不出来，见 HD2Scanner.log' end
+    if #txt > 390 then txt = txt:sub(1, 390) end      -- MOM 上限 400，留余量
+    return txt
+end
 
-        hdr('── 界面 ──')
-        add('浮动面板', CFG.draw and '开' or '关', CFG.draw and 'ok' or 'dim')
-        add('认领页签', CFG.claim and '开' or '关（只整浮窗）', 'dim')
-        add('菜单探针', CFG.probe and '开' or '关', 'dim')
-        add('探测方式', tostring(P.trigger), 'dim', P.trigger == 'menu' and '跟随 ESC' or '热键')
-        if UI and UI.pos then
-            local pos = UI.pos()
-            if pos then add('面板位置', string.format('%d, %d', pos.x, pos.y), 'dim',
-                            UI.dragging and UI.dragging() and '拖曳中' or '拖标题栏可移动') end
-        end
-        add('当前页 / 行', tostring(P.page) .. ' / ' .. tostring(P.cursor), 'dim')
-        add('绘制次数', tostring(P.draw_count or 0), 'dim')
-        add('插件数', tostring(#P.pages), 'text')
+-- MOM 的 label（≤64 字符）：一行摘要
+local function mom_status_label()
+    local ok, txt = pcall(function()
+        local ks = K and K.status and K.status() or nil
+        return string.format('扫描状态：%s · 表 %d 张 · %s',
+            ks and tostring(ks.state) or '未装载', mom_tables(),
+            (AOB and AOB.base and AOB.base()) and 'AOB ok' or 'AOB --')
+    end)
+    if not ok or type(txt) ~= 'string' or txt == '' then return '扫描状态（读取失败）' end
+    if #txt > 60 then txt = txt:sub(1, 60) end
+    return txt
+end
 
-        -- ↓↓↓ 示范：面板自己的设置，全部点着改
-        hdr('── 面板设置（点着改）──')
-        rows[#rows+1] = { label='浮动面板', kind='toggle',
-            get=function() return CFG.draw end,
-            set=function(v) CFG.draw = v cfg_save() log('cfg: draw=' .. tostring(v)) end }
-        rows[#rows+1] = { label='认领 ESC 页签', kind='toggle',
-            get=function() return CFG.claim end,
-            set=function(v) CFG.claim = v cfg_save() log('cfg: claim=' .. tostring(v)) end,
-            note='（要重开游戏才生效）' }
-        rows[#rows+1] = { label='菜单探针', kind='toggle',
-            get=function() return CFG.probe end,
-            set=function(v) CFG.probe = v cfg_save() log('cfg: probe=' .. tostring(v)) end }
-        rows[#rows+1] = { label='允许占第 5 页签', kind='choice', choices={'off','on'},
-            get=function() return CFG.allow_5th and 'on' or 'off' end,
-            set=function(v) CFG.allow_5th = (v == 'on') cfg_save()
-                log('cfg: allow_5th=' .. tostring(v) .. '（要重开游戏才生效）') end }
-        local HK_CHOICES = {'0x78 (F9)','0x77 (F8)','0x76 (F7)','0x75 (F6)'}
-        rows[#rows+1] = { label='热键（探不到 MenuSystem 时）', kind='choice',
-            choices=HK_CHOICES,
-            get=function()
-                -- ⚠ 必须返回 choices 里的**原样字符串**：下拉靠 row.value 跟 choices 精确比
-                --   来标「✓ 当前」，返回 '0x78' 而 choices 是 '0x78 (F9)' 就永远标不出来。
-                local want = string.format('0x%X', CFG.hotkey)
-                for _, c in ipairs(HK_CHOICES) do
-                    if c:sub(1, #want) == want then return c end
-                end
-                return want
-            end,
-            set=function(v) local n = tonumber(v:match('0x%x+'))
-                if n then CFG.hotkey = n cfg_save() log('cfg: hotkey=' .. v) end end }
-        local DETAIL_CHOICES = {'1 简','2 标准','3 诊断'}
-        rows[#rows+1] = { label='详情档位', kind='choice',
-            choices=DETAIL_CHOICES,
-            get=function() return DETAIL_CHOICES[CFG.detail or 2] end,
-            set=function(v) local n = tonumber(v:match('^%d'))
-                if n and n >= 1 and n <= 3 then CFG.detail = n cfg_save() log('cfg: detail=' .. n) end end,
-            note='各页显示多少内部细节' }
-        return rows
-    end,
-    api = P.api,
-}
-log('自注册为插件（自带扫描状态页）')
+local function mom_aob_text()
+    local ok, txt = pcall(function()
+        return mom_aob_line() .. '\n\n点一下 = 立刻重新解析（game.dll 代码段，分帧后台跑，约十几帧）。\n'
+            .. '失败了会显示原因（AOB 不唯一 / 锚点找不到 / 表不可读），同时写进 HD2Scanner.log。'
+    end)
+    if not ok or type(txt) ~= 'string' or txt == '' then return 'AOB 状态读不出来' end
+    if #txt > 390 then txt = txt:sub(1, 390) end
+    return txt
+end
+
+local function register_mod_options()
+    if MOM.registered then return end
+    local mom = rawget(_G, 'ModOptionsMenu')
+    if type(mom) ~= 'table' or mom.api ~= 1 or type(mom.register_option) ~= 'function' then return end
+    MOM.registered, MOM.api = true, mom
+
+    local function add(id, spec)
+        local ok, why = mom.register_option(id, spec)
+        if not ok then log('MOM: 注册 ' .. id .. ' 失败: ' .. tostring(why)) end
+        return ok
+    end
+    local function on_change(id, fn)
+        if type(mom.on_change) ~= 'function' then return end
+        local ok, why = pcall(mom.on_change, id, fn)
+        if not ok then log('MOM: on_change ' .. id .. ' 失败: ' .. tostring(why)) end
+    end
+    -- 动作型 toggle：点完立刻弹回 false（MOM 的 set 不触发 on_change，安全）
+    local function unpress(id)
+        if type(mom.set) == 'function' then pcall(mom.set, id, false) end
+    end
+
+    -- ① 状态（点一下 = 立刻扫一轮）
+    local status_id = MOM.prefix .. 'status'
+    add(status_id, { type = 'toggle', mod = MOM_NAME, default = false,
+        label = mom_status_label, description = mom_status_text })
+    on_change(status_id, function(v)
+        if not v then return end
+        local ok = pcall(function() if K and K.declare_need then K.declare_need() end end)
+        unpress(status_id)
+        log('MOM: 立刻扫一轮' .. (ok and '' or '（失败）'))
+    end)
+
+    -- ② 解析战备表（AOB）
+    local aob_id = MOM.prefix .. 'aob'
+    add(aob_id, { type = 'toggle', mod = MOM_NAME, default = false,
+        label = '解析战备表（AOB）', description = mom_aob_text })
+    on_change(aob_id, function(v)
+        if not v then return end
+        if AOB then
+            local ok2, r1, r2 = pcall(AOB.request)
+            log(string.format('MOM: 解析战备表 -> %s %s %s', tostring(r1), tostring(r2),
+                ok2 and '' or '（异常）'))
+        else
+            log('MOM: 解析战备表 -> AOB 模块未装载')
+        end
+        unpress(aob_id)
+    end)
+
+    -- ③ 写诊断到日志
+    local diag_id = MOM.prefix .. 'diag'
+    add(diag_id, { type = 'toggle', mod = MOM_NAME, default = false,
+        label = '写诊断到日志',
+        description = '把上面那段状态整块写进 HD2Scanner.log（排查用，点完自动弹回）。' })
+    on_change(diag_id, function(v)
+        if not v then return end
+        local ok2, txt = pcall(mom_status_text)
+        log('MOM 诊断：' .. tostring(txt):gsub('\n', ' | '))
+        log_flush(true)
+        unpress(diag_id)
+    end)
+
+    log('MOM: 已注册 3 行（扫描状态 / 解析战备表 / 写诊断）')
+end
 
 -- ---------------------------------------------------------------------------
 -- 4. 进程内自检：和 MDL 的成功基准逐项比对
@@ -620,6 +554,8 @@ local function frame()
     --   注意位置：写在"菜单开没开"判断**之前** —— 菜单关着也要保持探针节奏
     if K then pcall(K.frame) end
     if MS then pcall(MS.frame) end
+    if AOB then pcall(AOB.frame) end
+    pcall(register_mod_options)     -- MOM 面板：注册一次（幂等）
 
     local open = false
     if CFG.probe == false then
@@ -710,7 +646,7 @@ shutdown = function(...)
 end
 
 P.status = 'ready'
-P.modules = { platform = U, scan = S, ui = UI, tab = TB, registry = RG, kernel = K, memscan = MS, api = _G_HD2Menu }
-log(string.format('ready: plugins=%d; resources=%d', #P.pages, 6))
+P.modules = { platform = U, scan = S, ui = UI, tab = TB, kernel = K, memscan = MS, aob = AOB }
+log(string.format('ready: resources=%d', RES_N))
 
 return P

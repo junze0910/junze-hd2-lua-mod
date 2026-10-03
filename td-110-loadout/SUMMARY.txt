@@ -1,0 +1,18 @@
+TD-110 挂载切换（TD-110 Loadout）v1.0.1 —— 简短描述
+======================================================
+
+【A · 一行版 / one line】（51 字）
+TD-110 风暴漩涡坦克：驾驶员/炮手挂载四档可切换，激光与加特林主炮可放宽到 360° 水平射界。
+
+【B · 短版 / short】（136 字）
+把 TD-110 风暴漩涡坦克的两个挂载位变成四档可切换（原装 / 合作 / 忙碌 / 自定义），并给激光炮塔与加特林主炮一个 360° 水平射界的独立开关。取代旧版「TD-110 Co-Op」与「更忙的驾驶员」的二选一，只改运行时内存。需 HD2 Scanner 前置。
+
+【C · 中等 / medium】（212 字）
+把 TD-110 风暴漩涡坦克变成可配置：驾驶员位（+48）与炮手位（+24）各装什么、激光与加特林主炮的水平射界要不要放到 360°。四档模式（原装 / 合作 / 忙碌 / 自定义）+ 5 件可选挂载，两槽恰好一个激光（双激光会被拒）。取代旧版 TD-110 Co-Op 与 Busier TD-110 Driver 的二选一，换配置后重新召唤坦克即可生效，射界实时生效。只改运行时内存，需 HD2 Scanner 前置。
+
+【E · English short】（345 chars）
+TD-110 Storm tank, now configurable: pick what goes in the driver and gunner slots, and give the laser turret & gatling main gun a full 360° horizontal traverse. 4 modes (Vanilla / Co-op / Busy / Custom), 5 selectable mounts, exactly one laser per tank. Replaces TD-110 Co-Op and Busier TD-110 Driver. Runtime memory only — requires HD2 Scanner.
+
+------------------------------------------------------
+标签：载具 / TD-110 / 风暴漩涡 / 坦克 / 挂载 / 射界 / 可配置
+Tags: vehicle / TD-110 / storm tank / loadout / traverse / configurable

@@ -1,3 +1,9 @@
+-- ⚠⚠ 已退役（2026-10-04）：本模块**不打包、不加载**。
+--   原因：自绘面板 + `_G.HD2Menu` 页面体系整体退役 —— 消费者一律注册 `_G.ModOptionsMenu`。
+--   保留源码只为 ④⑤（浮动面板/页签认领）将来可能的改动；恢复需三步：
+--     ① build.py 的 MODULES 加回 ui；② hd2_scanner.lua 的 RES 加回 ui 并把 ctx.rows 那套接回来；
+--     ③ 面板要显示的内容改成不认识 registry 的形态（本文件只依赖 ctx.rows / ctx.rows_key）。
+--   注：现在直接加载本文件会报错（ctx.rows 已不存在），这是预期的。
 -- HD2 Scanner / ui —— user32 输入 + stingray 渲染 + 字体装配 + 行绘制
 -- 资源名: mods/junze/hd2_scanner/ui
 -- 只通过 ctx.rows() / ctx.rows_key() 拿内容，不认识 registry（①a）

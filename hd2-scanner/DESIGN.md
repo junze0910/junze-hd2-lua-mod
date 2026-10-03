@@ -1,27 +1,28 @@
 # HD2 Scanner
 
-ESC 菜单浮窗 + （规划中的）扫描内核。设计见
-[`hd2-mod/docs/MENU-PANEL-设计定稿.md`](../../docs/MENU-PANEL-设计定稿.md)（该文档待随合体改写）。
+**前置服务 mod**：数据表定位/广播 + 通用全量内存扫描 + AOB 战备表定位。
+界面只有**原生 MODS 页（`_G.ModOptionsMenu`）里的 3 行**；自绘面板已于 2026-10-04 退役。
 
 - 入口资源：`mods/junze/hd2_scanner`
-- 依赖：**BSL v15/API1 或 MDL 1.4.2**（任一即可）
+- 依赖：**BSL v15/API1 或 MDL 1.4.2**（任一即可）；界面可选依赖 **Mod Options Menu**
 - 日志：`%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\HD2Scanner.log`
 - 配置：`%LOCALAPPDATA%\CowboyBingus\Helldivers2\HD2Scanner.cfg`（改完 1 秒热生效）
-- 面板位置：`%LOCALAPPDATA%\CowboyBingus\Helldivers2\HD2Scanner.pos`（拖标题栏后自动记）
+- 对外 API：`_G.HD2Scanner`（见 `Scanner-API.md`）
 
-> **改名记录**：v0.4.1 及以前叫 `HD2 Scanner`（资源名 `mods/junze/hd2_scanner`）。
-> 因为「只整浮窗」之后面板不再写游戏内存，原来的「必须拆两个 mod」不再成立，
-> 于是把菜单面板并入 Scanner 本体，见下。
+> **界面变迁**：v0.4.1 起自带 ESC 浮窗面板；2026-10-03 默认关闭；**2026-10-04 整个页面体系退役**
+> （渲染宿主 `ui.lua` 不再打包，`registry.lua`/`_G.HD2Menu` 删除）。现在一律注册 ModOptionsMenu。
+> 历史设计见 [`docs/MENU-PANEL-设计定稿.md`](../../docs/MENU-PANEL-设计定稿.md)（顶部有退役横幅）。
 
 ## 架构（合体）
 
 ```
-┌─ HD2 Scanner（一个 mod）──────────────────────────────┐
-│  数据层（只读）  ← 待建，见 SCANNER-设计定稿.md          │
-│    _G.HD2Scanner = { request, poll, watch }  ← 给其它 mod │
-│  菜单浮窗 + 插件注册表（现有）                          │
-│    面板自己的页 = 扫描状态（直接读内核，不走 _G）        │
-└────────────────────────────────────────────────────────┘
+┌─ HD2 Scanner（一个 mod）───────────────────────────────────┐
+│  数据层（只读）  kernel.lua：LDLD 表定位 + 广播             │
+│    _G.HD2Scanner = { request, poll, watch, status, ... }    │
+│  memscan.lua   通用全量扫描服务（消费者提交 pattern）        │
+│  aob.lua       game.dll AOB → 战备记录指针数组（strat_*）    │
+│  界面            ModOptionsMenu 3 行（状态 / AOB / 诊断）    │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ## 模块结构（多资源 archive）
@@ -30,12 +31,13 @@ ESC 菜单浮窗 + （规划中的）扫描内核。设计见
 
 | 源文件 | 资源名 | 职责 |
 |---|---|---|
-| `src/hd2_scanner.lua` | `mods/junze/hd2_scanner` | **入口**：守卫 / `P` / 热配置 / 自检基准 / `resolve_once` / 帧循环 / 钩子 / 面板自注册 |
+| `src/hd2_scanner.lua` | `mods/junze/hd2_scanner` | **入口**：守卫 / `P` / 热配置 / 自检基准 / `resolve_once` / 帧循环 / 钩子 / MOM 面板注册 |
 | `src/platform.lua` | `.../hd2_scanner/platform` | ffi、kernel32、内存读写、日志、二进制小工具、`game_open` |
+| ~~`src/ui.lua`~~ · ~~`src/registry.lua`~~ | — | **已退役（2026-10-04）**：不打包、不加载。界面改走 `_G.ModOptionsMenu`；ui.lua 源码保留在 `src/`（顶部有说明） |
 | `src/scan.lua` | `.../hd2_scanner/scan` | **game.dll 签名扫描** + MENU / TAB / FONTS 解码器 |
-| `src/ui.lua` | `.../hd2_scanner/ui` | user32 输入、stingray 浮窗渲染、字体装配、拖曳 |
 | `src/tab.lua` | `.../hd2_scanner/tab` | 菜单探测（跟随 ESC）+ 页签落位（**默认关闭**） |
-| `src/registry.lua` | `.../hd2_scanner/registry` | 插件注册表 / `_G.HD2Menu` / pending 队列 |
+| `src/memscan.lua` | `.../hd2_scanner/memscan` | 通用全量扫描服务（消费者提交 pattern） |
+| `src/aob.lua` | `.../hd2_scanner/aob` | **game.dll AOB 解战备记录指针数组**（只读，分帧） |
 
 > ⚠️ `scan.lua` 扫的是 **game.dll 的机器码签名**；将来的扫描内核（扫数据表）是**另一件事**，
 > 会作为 `kernel.lua` 新增，别混淆。
@@ -60,7 +62,7 @@ python build.py --verify <zip>       # 只校验已打好的包
 ## 测试（离线，不需要游戏）
 
 ```powershell
-python test/test_load.py       # 装载 + 插件注册表 + cfg 解析 + 惰性加载（23 项）
+python test/test_load.py       # 装载 + cfg + AOB 解链 + MOM 面板 + 源码卫生（59 项）
 python test/test_decoders.py   # 合成镜像单测三个解码器 + 9 个变异
 ```
 
@@ -73,16 +75,17 @@ python test/test_decoders.py   # 合成镜像单测三个解码器 + 9 个变异
 
 | | |
 |---|---|
-| 浮窗显示 | ✅ 实机验证 |
-| 中文文字 | ✅ 实机验证 |
-| 拖曳 + 位置记忆 | ✅ 已实现（v0.4.0） |
-| 悬停 / 点击闪光 | ✅ 已实现（v0.4.1） |
-| 面板自带状态页 | ✅ 已实现（v0.4.2） |
-| 不崩 | ✅ 重画前 destroy_gui（v0.3.5 起） |
-| **扫描内核** | ⏳ **待建**（SCANNER-设计定稿 阶段 1） |
+| 数据表广播（7 张表） | ✅ 实机验证（连续多轮 `命中 7`） |
+| 签名解码器自检 11/11 | ✅ 实机验证 |
+| `memscan` 通用全量扫描 | ✅ 实机验证（14,242 区段 / 5.2 GB / 约 13 s） |
+| AOB 战备表定位（`strat_*`） | ⏳ **待实机验证**（离线：合成映像解链 + 不唯一安全网） |
+| MOM 面板 3 行 | ⏳ **待实机验证**（离线：注册/弹回/超长保护） |
+| 自绘面板（ui.lua） | ⛔ 已退役（2026-10-04，不再打包） |
 
 ## 已知 TODO
 
-- **扫描内核**：偏移直读 → 广播 → 失效检测 → 退化全量（设计定稿 §4/§5）
-- `font.*` 自检在开机瞬间会 MISMATCH —— 字体子系统那时还没就绪，ui 会在用时重试（**无害**）
-- `tab.lua` 的 `claim_tab` 现在默认不走（`claim=off`），代码留着备用
+- **kernel 的 HUNT 阶段**未实现（落空只记日志）——AOB 路线已覆盖原需求，优先级低
+- `font.*` 自检在开机瞬间会 MISMATCH（字体子系统还没就绪）：只在自检里体现，**无害**
+- `tab.lua` 的 `claim_tab` 默认不走（`claim=off`）；第 5 槽位实测会崩（`0xC0000026`），
+  `allow_5th` 开关现在**真的接线了**（2026-10-04 修）但默认关
+- `watch/unwatch/watched` 是**兼容占位**（没有消费者读 `watched`），见 `Scanner-API.md` §2.3

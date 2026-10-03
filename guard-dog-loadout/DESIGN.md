@@ -122,12 +122,22 @@ custom=             # 16 位 BE 十六进制（物品哈希 u64）。留空 = �
 - ⚠ **注释会被保住了**：`cfg_save` 现在写的是带说明的完整模板（以前只写 3 行裸键），
   所以面板上改一次选项/点初始化，文件里的填写说明不会消失。
 
-## 八、面板
+## 八、设置入口
 
-| 入口 | 内容 |
-|---|---|
-| Scanner 插件页（`_G.HD2Menu`） | 「下挂物品」下拉三选一 + 「立刻写一次」+ 「初始化（强制写回原装 + cfg 复位）」+ 三档诊断 |
-| `ModOptionsMenu` 原生 MODS 页 | 同上的下拉 + 初始化开关；**选项的 `description` 里给出 cfg 的完整路径** |
+| 入口 | 状态 | 内容 |
+|---|---|---|
+| `ModOptionsMenu` 原生 MODS 页 | ✅ **主入口** | 「下挂物品」三选一 + 「初始化」开关；**选项的 `description` 里给出 cfg 的完整路径** |
+| 直接手改 cfg | ✅ 一直可用 | 1 秒热重读；文件里带填写说明 |
+| ~~Scanner 插件页（`_G.HD2Menu`）~~ | ⛔ **已删除** | 2026-10-04 随 `_G.HD2Menu` 页面体系整体退役（渲染宿主 `ui.lua` 不再打包）。原来那一页的内容 = 同样的下拉 + 立刻写一次 + 初始化 + 三档诊断；**下拉与初始化现在都在 MODS 页**，诊断看 `GuardDogLoadout.log` |
+
+> 本 mod 的写入是**自动**的（改配置就立刻写、每 300 帧复查），所以核心功能**不依赖任何 UI** ——
+> 没有 ModOptionsMenu 也能靠手改 cfg 用。
+
+> **2026-10-03 变更**：HD2 Scanner 移除了浮动面板（并默认不抢 ESC 页签），`_G.HD2Menu` 仍然导出但没有渲染器。
+> 因此对外文档（`STORE-PAGE.zh.md` / `.en.md`）**不再提** Scanner 面板这条入口，UI 一律指 MODS 页。
+>
+> **2026-10-04 变更**：`_G.HD2Menu` 与 `registry.lua` **整体退役**，本 mod 的页面代码已删除。
+> 全仓库现在**只注册 ModOptionsMenu**；新 mod 不要再写 `menu.register` / `HD2MenuQueue`。
 
 ### 8.1 cfg 路径写在「右边的描述页」
 
@@ -143,8 +153,9 @@ C:\Users\<你>\AppData\Local\CowboyBingus\Helldivers2\GuardDogLoadout.cfg
 
 （`test_gd_loadout.py` 用例 16 用假 `loader.log_directory` 把这条链路钉住了。）
 
-> **自定义哈希不做文本框**：Scanner 面板是纯鼠标的（`ui.lua` §16 —— 面板吃不掉键盘事件，
-> Backspace/Enter 会穿透到 ESC 菜单）。所以自定义值只能从 cfg 读，这正是用户方案的意思。
+> **自定义哈希不做文本框**：ModOptionsMenu 只支持开关 / 固定选项，**不支持自由文本输入**
+> （HD2 Scanner 那套面板也是纯鼠标的 —— `ui.lua` §16：面板吃不掉键盘事件，Backspace/Enter
+> 会穿透到 ESC 菜单）。所以自定义值只能从 cfg 读，这正是用户方案的意思。
 
 ## 九、红线
 

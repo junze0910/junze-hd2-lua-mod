@@ -1,4 +1,10 @@
 -- HD2-Addon: mods/dsh/guard_dog_mg43
+--
+-- ⛔ **已废弃（2026-10-04，不再维护）**：本 mod 由 `GuardDogLoadout` 取代 —— 两者改的是**同一条记录的
+--   同一个槽位**（`drone_mg` 挂载武器），同时启用只会互相覆盖。
+--   本版（v2.1）是**最后一版**：只做了「界面退役」的对齐（删掉永不显示的 HD2Menu 页面 +
+--   在原生 MODS 页注册一行「立刻写一次」），功能与 v2.0 相同。
+--   `dist/` 已下架（包在 `build/_deprecated/from_dist/`），源码仅作存档 —— 新用户请装 `GuardDogLoadout`。
 
 -- ===========================================================================
 --  护卫犬挂载：把 drone_mg（机枪犬）上挂的武器换成 SEAF MG-43
@@ -18,7 +24,7 @@
 --      只改 +0 这 8 字节，记录其余 112 字节一字不动。
 -- ===========================================================================
 
-local VERSION = '2.0'
+local VERSION = '2.1'
 local MOD = 'mods/dsh/guard_dog_mg43'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, {
@@ -729,6 +735,44 @@ local function frame()
   run_slice()
 end
 
+-- ---------------------------------------------------------------- ModOptionsMenu（本 mod 唯一的界面入口）
+-- HD2Menu 页面体系 2026-10-04 退役（渲染宿主不再发包）：进度/状态看 Logs\GuardDogMg43.log，
+-- 这里只留一个手动动作。MOM 没有只读状态行，所以动作型 toggle 点完自动弹回。
+local MOM = { registered = false }
+local function register_mod_options()
+  if MOM.registered then return end
+  local mom = rawget(_G, 'ModOptionsMenu')
+  if type(mom) ~= 'table' or mom.api ~= 1 or type(mom.register_option) ~= 'function' then return end
+  MOM.registered = true
+  local id = 'guard_dog_mg43.write_now'
+  local okm, why = mom.register_option(id, {
+    type = 'toggle', mod = '实弹狗 MG-43', default = false,
+    label = '立刻写一次',
+    description = '按 Scanner 广播的地址重写一次挂载（点完自动弹回）。进度看 Logs\\GuardDogMg43.log。' })
+  if not okm then report('ModOptionsMenu: 注册失败 ' .. tostring(why), true) return end
+  pcall(mom.on_change, id, function(v)
+    if not v then return end
+    local S = SCAN.api
+    if not S then
+      report('手动写入：没有 Scanner 前置', true)
+    else
+      local snap = S.poll(TABLE_TYPE)
+      local cnt = 0
+      if type(snap) == 'table' and type(snap.entries) == 'table' then
+        for i2 = 1, #snap.entries do
+          if type(snap.entries[i2]) == 'table' then
+            pcall(apply, snap.entries[i2].addr) cnt = cnt + 1
+          end
+        end
+      end
+      report(('手动写入：处理了 %d 份表'):format(cnt), true)
+    end
+    pcall(mom.set, id, false)
+  end)
+  report('ModOptionsMenu: 已注册「立刻写一次」', true)
+end
+
+
 -- ---------------------------------------------------------------- 挂载
 local original_update = update
 if type(original_update) == 'function' then
@@ -738,113 +782,12 @@ if type(original_update) == 'function' then
       state.errs = state.errs + 1
       if state.errs <= 5 then report('frame error: ' .. tostring(err)) end
     end
+    pcall(register_mod_options)
     return original_update(...)
   end
 else
   state.phase = 'no_update'
   report('全局 update 不可用，无法运行', true)
 end
-
--- ---------------------------------------------------------------- 菜单面板插件（自带写入状态）
--- 设计：MENU-PANEL-设计定稿 §14 —— 本 mod 自带一页 + 面板 root 页上一行摘要。
--- 加载顺序不保证（面板可能还没加载）→ 走 _G.HD2MenuQueue 挂起队列（定稿 §14.6）。
-local function menu_attach(menu)
-  local function written_count()
-    local n = 0
-    for _ in pairs(state.slots) do n = n + 1 end
-    return n
-  end
-
-  menu.register{
-    id = 'guard_dog_mg43', title = '实弹狗 MG-43', order = 30, api = 1,
-
-    -- 面板 root 页那一行；约每秒调一次，必须便宜（只读字段，不扫内存）
-    status = function()
-      local n = written_count()
-      if n > 0 then return { text = '已写入', tone = 'ok', note = n .. ' 处' } end
-      if state.refusals > 0 then return { text = '被拒', tone = 'bad', note = state.refusals .. ' 次' } end
-      if not SCAN.api and not USE_SELF_SCAN then
-        return { text = '缺前置', tone = 'bad', note = '没有 HD2Scanner' }
-      end
-      if state.gave_up then return { text = '放弃', tone = 'bad' } end
-      return { text = '找表中', tone = 'warn', note = SCAN.api and 'Scanner' or '自扫' }
-    end,
-
-    -- 详情页。详情档位由面板经 pctx.detail 注入（CFG.detail，1 简 / 2 标准 / 3 诊断）
-    build = function(pctx)
-      local D = tonumber(pctx and pctx.detail) or 2
-      if D < 1 or D > 3 then D = 2 end
-      local rows = {}
-      local function add(l, v, tt, note, min)
-        if D >= (min or 2) then
-          rows[#rows+1] = { label = l, value = tostring(v), tone = tt or 'text', note = note }
-        end
-      end
-      local function hdr(s2, min)
-        if D >= (min or 2) then
-          rows[#rows+1] = { label = s2, tone = 'dim', selectable = false }
-        end
-      end
-      local n = written_count()
-
-      hdr('── 当前状态 ──', 1)
-      add('已写字段', n .. ' 处', n > 0 and 'ok' or 'dim', nil, 1)
-      if state.refusals > 0 then
-        add('拒绝', state.refusals, 'warn', '有写入没通过回读校验，看日志', 2)
-      end
-      add('地址来源', SCAN.api and 'HD2Scanner（前置）' or (USE_SELF_SCAN and '自扫（回滚模式）' or '无'),
-          SCAN.api and 'ok' or 'bad', nil, 2)
-      add('表', ('MountComponentData 0x%08X'):format(TABLE_TYPE), 'text', nil, 2)
-      add('写入', hex(OLD_PATH) .. ' → ' .. hex(NEW_PATH), 'text', 'drone_mg 挂载 → SEAF MG-43', 2)
-
-      hdr('── 规格（判断条件 + 写入目标）──', 3)
-      add('内容锚点', hex(ANCHOR_OLD), 'dim', '旧路径 8 字节 + 上下文常量 4 字节，全表唯一', 3)
-      add('上下文', hex(CTX), 'dim', '记录 +8 处的常量', 3)
-      add('数据起点', ('magic + 0x%X'):format(DATA_OFF), 'dim', '表头 24 字节', 3)
-      add('读取上限', DATA_CAP .. ' 字节', 'dim', 'size 只做区间检查，不当指纹', 3)
-
-      hdr('── 计数 ──', 3)
-      add('写入总次数', state.writes, 'dim', nil, 3)
-      add('轮次', state.rounds, 'dim', nil, 3)
-      add('空轮', state.empty_rounds, 'dim', nil, 3)
-      add('帧', state.frame, 'dim', nil, 3)
-      if state.refusals == 0 then add('拒绝', 0, 'dim', nil, 3) end
-
-      hdr('── 已写地址 ──', 3)
-      local any = false
-      for addr in pairs(state.slots) do
-        any = true
-        add(('0x%X'):format(addr), '✓', 'ok', nil, 3)
-      end
-      if D >= 3 and not any then add('（还没有）', '', 'dim', nil, 3) end
-
-      rows[#rows+1] = { label = '立刻写一次', kind = 'action', on_click = function()
-        local Sv = SCAN.api
-        if not Sv then report('手动写入：没有 Scanner 前置', true) return end
-        local snap = Sv.poll(TABLE_TYPE)
-        local cnt = 0
-        if type(snap) == 'table' and type(snap.entries) == 'table' then
-          for i = 1, #snap.entries do
-            if type(snap.entries[i]) == 'table' then
-              pcall(apply, snap.entries[i].addr) cnt = cnt + 1
-            end
-          end
-        end
-        report(('手动写入：处理了 %d 份表'):format(cnt), true)
-      end }
-      return rows
-    end,
-  }
-end
-
-local menu = rawget(_G, 'HD2Menu')
-if type(menu) == 'table' and type(menu.register) == 'function' then
-  menu_attach(menu)
-else
-  local q = rawget(_G, 'HD2MenuQueue')      -- 面板还没加载 → 挂起（定稿 §14.6）
-  if type(q) ~= 'table' then q = {} rawset(_G, 'HD2MenuQueue', q) end
-  q[#q + 1] = { id = 'guard_dog_mg43', attach = menu_attach }
-end
-
 report(('已加载 v%s（挂载：内容锚点定位；地址来自 HD2Scanner 前置）；前置 loader v%s / API %s（来源 %s）'):format(
   VERSION, tostring(ENV.version or '?'), tostring(ENV.api or '?'), tostring(ENV.source)))
