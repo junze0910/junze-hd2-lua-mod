@@ -136,13 +136,14 @@ custom=             # 16 位 BE 十六进制物品哈希；留空 = 自定义项
 ---
 # v2.0 — 三条发布线（前置 / 单兵 / 载具）+ 后勤占位
 
+> **附件已于 2026-10-03 更新到 patch 版**：单兵线换成 `GuardDogLoadout v1.0.1`、载具线换成 `TD-110-Loadout v1.0.1` + `ExoLoadout v0.7.2` —— 三个 patch 的说明见本文件最上面三段。
 > 本次起改用**按发布线打 tag**，四条线各自演进（旧仓库级 tag `v1.0`~`v1.3` 保留不动）：
 >
 > | 发布线 | tag | 本次内容 |
 > |---|---|---|
 > | 前置 | `core-v2.0` | `HD2-Scanner-v0.7.0.zip` |
-> | 单兵 | `infantry-v2.0` | `AC8-Rack-Backpack-v2.0.zip` · `Guard-Dog-MG43-v2.0.zip` · `GuardDogLoadout-v1.0.zip` |
-> | 载具 | `vehicle-v2.0` | `TD-110-Loadout-v1.0.zip` · `ExoLoadout-v0.7.zip` |
+> | 单兵 | `infantry-v2.0` | `AC8-Rack-Backpack-v2.0.zip` · `Guard-Dog-MG43-v2.0.zip` · `GuardDogLoadout-v1.0.1.zip` |
+> | 载具 | `vehicle-v2.0` | `TD-110-Loadout-v1.0.1.zip` · `ExoLoadout-v0.7.2.zip` |
 > | 后勤 | `logistics-v0.1alpha` | **预留线，暂无包** |
 >
 > 每个 tag 的 Release 附件只带**本线**的包 + `SHA256SUMS.txt`；`dist/` 里则始终是全部当前包。
@@ -176,14 +177,14 @@ custom=             # 16 位 BE 十六进制物品哈希；留空 = 自定义项
 |---|---|
 | `AC8-Rack-Backpack-v2.0.zip` | AC-8 机炮包架的备弹背包：原版 **50 发 → 废案 75 发**。定位用背包资源哈希 + 「命中点前后必须是机炮本体」的内容校验，不依赖表布局 |
 | `Guard-Dog-MG43-v2.0.zip` | 机枪犬 `drone_mg` 挂载武器 → **SEAF MG-43（实弹）**。锚点 = 旧路径 8 字节 + `+8` 常量，**只改 8 字节** |
-| `GuardDogLoadout-v1.0.zip` | 护卫犬挂载武器**三选一**：原装 AR-23P / SEAF MG-43 / 自定义哈希（cfg 热重读；非法值拒写并写明原因）。与「更强的实弹狗」**二选一** |
+| `GuardDogLoadout-v1.0.1.zip` | 护卫犬挂载武器**三选一**：原装 AR-23P / SEAF MG-43 / 自定义哈希（cfg 热重读；非法值拒写并写明原因）。与「更强的实弹狗」**二选一** |
 
 ### `vehicle-v2.0` — 载具线
 
 | 包 | 作用 |
 |---|---|
-| `TD-110-Loadout-v1.0.zip` | TD-110 两个挂载位**四档模式**（原装 / 合作 / 忙碌 / 自定义）+ **射界 360° 独立开关**（只解水平 ±180）。硬不变量：两个槽位**恰好一个激光**；取代 `TD-110 Co-Op` + `Busier TD-110 Driver`（两者改的是同一条记录的同一个槽位） |
-| `ExoLoadout-v0.7.zip` | EXO 战备自选：**携带机体四选一 + 附加机体三选一**（禁自引用）+ **手臂跨机体互换**（只在携带的两台之间）+ `use=2`、**冷却不动**。取代外骨骼两版 —— **不再需要二选一** |
+| `TD-110-Loadout-v1.0.1.zip` | TD-110 两个挂载位**四档模式**（原装 / 合作 / 忙碌 / 自定义）+ **射界 360° 独立开关**（只解水平 ±180）。硬不变量：两个槽位**恰好一个激光**；取代 `TD-110 Co-Op` + `Busier TD-110 Driver`（两者改的是同一条记录的同一个槽位） |
+| `ExoLoadout-v0.7.2.zip` | EXO 战备自选：**携带机体四选一 + 附加机体三选一**（禁自引用）+ **手臂跨机体互换**（只在携带的两台之间）+ `use=2`、**冷却不动**。取代外骨骼两版 —— **不再需要二选一** |
 ## 校验（SHA-256）
 
 | 包 | SHA-256 |
@@ -191,9 +192,9 @@ custom=             # 16 位 BE 十六进制物品哈希；留空 = 自定义项
 | `HD2-Scanner-v0.7.0.zip` | `dfc6f878f1f37a6b6bd72fc2fbc0652dce33a3329fef4d62ec0df758ca3eff8d` |
 | `AC8-Rack-Backpack-v2.0.zip` | `df2f1b8bf9c07a4c5ca91291aa7cda97f833ebe6dc97f3adf18c449bd498d7f4` |
 | `Guard-Dog-MG43-v2.0.zip` | `2f9a2e42f522ecf38e5e609d014a61904825fbb027523a0dc99bfac812ac0594` |
-| `GuardDogLoadout-v1.0.zip` | `9b0865003efdb9f3a67bfdf0103cf001b6d0aced4245d29f912e234eb8fcda74` |
-| `TD-110-Loadout-v1.0.zip` | `ffaf15e2a35980b69600b80564365fe285abc6eba7a6ae8a60c9a5937a5878d4` |
-| `ExoLoadout-v0.7.zip` | `21a3d4128f5836e86614a2613adbeaf52f40dd7aca70c26de5081fdf5b66d9be` |
+| `GuardDogLoadout-v1.0.1.zip` | `686dc8b097880c16531d24b42cafef3b5dd0d8ee4ef6f9d0e2d49f9eeb06aa07` |
+| `TD-110-Loadout-v1.0.1.zip` | `1b09849a438f6b396022d4664f3a07cbe5cd6053a666eae46326201e1e72ca42` |
+| `ExoLoadout-v0.7.2.zip` | `80e6cbcc47e806cdcb90c5be60e7405589553d7761853da94faab28d6818cf0a` |
 
 `dist/SHA256SUMS.txt` 里是**当前全部 10 个包**的哈希（含旧线：外骨骼两版、No Large Piercing 两版）。
 
