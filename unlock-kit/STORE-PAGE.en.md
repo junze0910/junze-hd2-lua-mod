@@ -12,6 +12,7 @@ Turns "unlock X" into an **on/off switch per target** on the game's native **ESC
 - **One read-only recon row**: prints target key / registered? / template index / stratagem record and selectable bit
 - Everything happens in **runtime memory** — no game files are modified; disable the mod and restart to fully revert
 
+> ✅ **v0.6 is in-game verified** (user confirmed, 2026-10-04): both weapons, all 6 stratagems and the read-only recon work.
 > ⚠️ **Explicit whitelist only — there is no "unlock everything".** **No attachment unlocks** (removed in v0.6, see below).
 
 ## Features
