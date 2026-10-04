@@ -54,7 +54,7 @@
 --  红线：只写目标字段；写前 VirtualProtect、写后回读校验；失败一律记 refuse，绝不当成功。
 -- ===========================================================================
 
-local VERSION = '1.0.1'
+local VERSION = '1.0.2'
 local MOD = 'mods/dsh/tank_storm_loadout'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, phase = 'starting', writes = 0, refusals = 0, errs = 0,
@@ -459,6 +459,9 @@ local function set_yaw360(on)
     on and '1' or '0', on and '激光 + 加特林 水平射界 → ±180（不动视角）' or '写回原装 ±20'), true)
 end
 
+-- 前向声明：MOM 段的「把控件拨回当前 cfg」；do_reset 复位 cfg 之后要调它
+local mom_sync = nil
+
 local function do_reset()
   state.slots, state.yslots = {}, {}
   state.force_vanilla = true          -- ★ 允许强制覆盖"认不出来的当前值"（6.25）
@@ -467,7 +470,8 @@ local function do_reset()
   CFG.driver, CFG.gunner = ITEM_LASER, ITEM_SMOKE
   state.force = true
   cfg_save()
-  report('初始化：全部还原为原装（驾驶员=烟雾弹 / 炮手=激光 / 射界 ±20），cfg 也复位', true)
+  if mom_sync then pcall(mom_sync) end
+  report('初始化：全部还原为原装（驾驶员=烟雾弹 / 炮手=激光 / 射界写回 ±20，且本局不再自动套用 360°），cfg 也复位', true)
 end
 
 -- ---------------------------------------------------------------- Scanner 前置（硬前置）
@@ -1102,81 +1106,118 @@ local function action_apply_now()
   recheck()
   report(('立刻写一次：本轮写 %d 处，累计 %d 处'):format(w, state.writes), true)
 end
--- ---------------------------------------------------------------- ModOptionsMenu 适配
+-- ---------------------------------------------------------------- MOM 适配
+-- 2026-10-04：并进 HD2 统一分组（A HD2 MOD COLLECTION），行数 7 -> 3：
+--   预设（原装 / 合作·烟雾 / 合作·40mm / 忙碌·重机枪 / 忙碌·40mm / 自定义）
+--   炮手槽位 / 驾驶员槽位（各 5 项；直接改 = 自动切「自定义」）
+-- 射界 360° 改成**默认行为**（不再占一行）；「初始化」挂到 Scanner 的全局按钮。
+local MOM_GROUP_FALLBACK = 'A HD2 MOD COLLECTION'
+local function mom_group()
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) == 'table' and type(S.mom_group) == 'string' and S.mom_group ~= '' then
+    return S.mom_group
+  end
+  return MOM_GROUP_FALLBACK
+end
+
+-- 预设 6 档 -> (mode, 子选项)。mode 仍是唯一的真值；预设只是它的快捷方式。
+local PRESET_CHOICES = {
+  '原装（烟雾 / 激光）',
+  '合作 · 烟雾弹（驾驶员激光）',
+  '合作 · 40mm 机炮（驾驶员激光）',
+  '忙碌 · 重机枪（炮手激光）',
+  '忙碌 · 40mm 机炮（炮手激光）',
+  '自定义（直接改下面两槽）',
+}
+local PRESET_KEYS = {
+  { mode = 'vanilla' },
+  { mode = 'coop', coop_gun = 'smoke' },
+  { mode = 'coop', coop_gun = 'autocannon' },
+  { mode = 'busy', busy_gun = 'hmg' },
+  { mode = 'busy', busy_gun = 'autocannon' },
+  { mode = 'custom' },
+}
+local function preset_index()
+  local m = CFG.mode
+  if m == 'vanilla' then return 1 end
+  if m == 'coop'  then return (CFG.coop_gun == 'autocannon') and 3 or 2 end
+  if m == 'busy'  then return (CFG.busy_gun == 'autocannon') and 5 or 4 end
+  return 6
+end
+
+local function slot_index(slot)
+  for i, lb in ipairs(CUSTOM_CHOICES) do
+    if ITEM_BY_LABEL[lb] == CFG[slot] then return i end
+  end
+  return 1
+end
+
+local function apply_preset(i)
+  local pk = PRESET_KEYS[i]
+  if not pk then return end
+  CFG.mode = pk.mode
+  if pk.coop_gun then CFG.coop_gun = pk.coop_gun end
+  if pk.busy_gun then CFG.busy_gun = pk.busy_gun end
+  CFG.yaw360 = true                    -- ★ 射界 360° 是默认行为：点预设 = 重新套用
+  touched(('预设 -> %s'):format(PRESET_CHOICES[i]))
+end
+
+-- 全局「初始化」：挂到 Scanner 的注册表（旧版 Scanner 没该 API 则跳过）
+local RESET_HOOKED = false
+local function hook_reset()
+  if RESET_HOOKED then return end
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) ~= 'table' or type(S.register_reset) ~= 'function' then return end
+  local ok, res = pcall(S.register_reset, 'TD-110', do_reset)
+  if ok and res then RESET_HOOKED = true end
+end
+
 local function register_mod_options()
   if MOD_OPTIONS.registered then return end
   local mom = rawget(_G, 'ModOptionsMenu')
   if type(mom) ~= 'table' or mom.api ~= 1 then return end
   MOD_OPTIONS.registered = true
   state.mom = mom                      -- 拒绝非法改动时用它把控件弹回当前值
+  local MOM_GROUP = mom_group()
 
-  local id = 'td110_loadout.mode'
-  local function index_of(key)
-    for i, k in ipairs({ 'vanilla', 'coop', 'busy' }) do if k == key then return i end end
-    return 2
-  end
-  mom.register_option(id, { type = 'choice', label = 'TD-110 挂载模式', mod = 'TD-110 挂载切换',
-    choices = MODE_CHOICES, default = index_of(CFG.mode),
-    description = '原装 / 合作(驾驶员激光) / 忙碌(驾驶员重机枪)。挂载换完要重新召唤坦克才生效' })
-  mom.on_change(id, function(v)
-    local name = MODE_CHOICES[tonumber(v) or 0]
-    local k = name and MODE_KEY[name]
-    if k then set_mode(k) end
+  -- ① 预设
+  local pid = 'td110_loadout.preset'
+  mom.register_option(pid, { type = 'choice', label = '[TD-110] 预设', mod = MOM_GROUP,
+    choices = PRESET_CHOICES, default = preset_index(),
+    description = '六档预设：原装 / 合作（驾驶员激光）/ 忙碌（驾驶员重火力）/ 自定义。'
+      .. '挂载换完要**重新召唤**坦克才生效。'
+      .. '射界 360° 是本 mod 的默认行为：点任意预设都会重新套用；只有「初始化」会写回原装 ±20。' })
+  mom.on_change(pid, function(v)
+    apply_preset(tonumber(v) or 0)
+    if mom_sync then pcall(mom_sync) end
   end)
 
-  local cid = 'td110_loadout.coop_gun'
-  mom.register_option(cid, { type = 'choice', label = '合作·炮手武器', mod = 'TD-110 挂载切换',
-    choices = COOP_GUN_CHOICES, default = (CFG.coop_gun == 'autocannon') and 2 or 1,
-    description = '合作模式：炮手位 = 烟雾弹发射器 / 40mm 机炮武器站（驾驶员位固定激光）' })
-  mom.on_change(cid, function(v) local nm = COOP_GUN_CHOICES[tonumber(v) or 0]
-    if nm then set_coop_gun(nm) end end)
-
-  local bid = 'td110_loadout.busy_gun'
-  mom.register_option(bid, { type = 'choice', label = '忙碌·驾驶员武器', mod = 'TD-110 挂载切换',
-    choices = BUSY_GUN_CHOICES, default = (CFG.busy_gun == 'autocannon') and 2 or 1,
-    description = '忙碌模式：驾驶员位 = 重机枪武器站 / 40mm 机炮武器站（炮手位固定激光）' })
-  mom.on_change(bid, function(v) local nm = BUSY_GUN_CHOICES[tonumber(v) or 0]
-    if nm then set_busy_gun(nm) end end)
-
+  -- ② 炮手槽位 / ③ 驾驶员槽位（直接改 = 自动切「自定义」）
   for _, slot in ipairs({ 'driver', 'gunner' }) do
     local sid = 'td110_loadout.' .. slot
-    local function idx()
-      for i, lb in ipairs(CUSTOM_CHOICES) do
-        if ITEM_BY_LABEL[lb] == CFG[slot] then return i end
-      end
-      return 1
-    end
+    local who = (slot == 'driver') and '驾驶员' or '炮手'
     mom.register_option(sid, { type = 'choice',
-      label = (slot == 'driver') and '自定义·驾驶员挂载' or '自定义·炮手挂载',
-      mod = 'TD-110 挂载切换', choices = CUSTOM_CHOICES, default = idx(),
-      description = '只在 mode=custom 时生效。两槽不能同时是激光（会互相抢引导）' })
-    mom.on_change(sid, function(v) local nm = CUSTOM_CHOICES[tonumber(v) or 0]
-      if nm then set_custom(slot, nm) end end)
+      label = '[TD-110] ' .. who .. '槽位',
+      mod = MOM_GROUP, choices = CUSTOM_CHOICES, default = slot_index(slot),
+      description = ('直接选 %s 槽里的物品（白名单 5 件）；改完自动切到「自定义」预设。'
+        .. '两槽不能同时是激光（会互相抢引导）。挂载换完要重新召唤坦克才生效。'):format(who) })
+    mom.on_change(sid, function(v)
+      local nm = CUSTOM_CHOICES[tonumber(v) or 0]
+      if nm then set_custom(slot, nm) end
+      CFG.yaw360 = true
+      if mom.set then pcall(mom.set, 'td110_loadout.preset', preset_index()) end
+    end)
   end
 
-  local yid = 'td110_loadout.yaw360'
-  mom.register_option(yid, { type = 'toggle', label = '射界 360°（只解水平）',
-    mod = 'TD-110 挂载切换', default = CFG.yaw360 and true or false,
-    description = '开 = 激光炮塔 + 加特林主炮 的水平射界 ±180；关 = 写回原装 ±20。' ..
-                  '只解水平射界，不解除视角限制。射界是实时读的' })
-  mom.on_change(yid, function(v) set_yaw360(v and true or false) end)
+  -- 把 MOM 三个控件拨回当前 cfg（预设切换 / 初始化之后调）
+  mom_sync = function()
+    if type(mom.set) ~= 'function' then return end
+    pcall(mom.set, 'td110_loadout.preset', preset_index())
+    pcall(mom.set, 'td110_loadout.driver', slot_index('driver'))
+    pcall(mom.set, 'td110_loadout.gunner', slot_index('gunner'))
+  end
 
-  local rid = 'td110_loadout.reset'
-  mom.register_option(rid, { type = 'toggle', label = '初始化（全部还原为原装 + cfg 复位）',
-    mod = 'TD-110 挂载切换', default = false })
-  mom.on_change(rid, function(v)
-    if not v then return end
-    do_reset()
-    mom.set(id, index_of(CFG.mode))
-    mom.set(yid, false)
-    mom.set('td110_loadout.coop_gun', 1)
-    mom.set('td110_loadout.busy_gun', 1)
-    mom.set('td110_loadout.driver', 5)
-    mom.set('td110_loadout.gunner', 4)
-    mom.set(rid, false)
-  end)
-
-  report('ModOptionsMenu: TD-110 挂载切换已注册到原生 MODS 页', true)
+  report(('ModOptionsMenu: 已注册到「%s」（3 行：预设 / 炮手槽位 / 驾驶员槽位；初始化在 Scanner 的全局按钮）'):format(MOM_GROUP), true)
 end
 
 -- ---------------------------------------------------------------- 挂载
@@ -1193,10 +1234,15 @@ if type(orig) == 'function' then
       state.errs = state.errs + 1
       if state.errs <= 5 then report('ModOptionsMenu error: ' .. tostring(err3)) end
     end
+    local ok4, err4 = pcall(hook_reset)
+    if not ok4 then
+      state.errs = state.errs + 1
+      if state.errs <= 5 then report('Scanner 全局初始化挂钩 error: ' .. tostring(err4)) end
+    end
     return orig(...)
   end
 end
 
 report(('已加载 v%s（mode=%s coop_gun=%s busy_gun=%s；射界 360°=%s；Scanner 前置；弹匣不改）'):format(
   VERSION, tostring(CFG.mode), tostring(CFG.coop_gun), tostring(CFG.busy_gun),
-  CFG.yaw360 and '开' or '关'), true)
+  CFG.yaw360 and '开（默认）' or '关（初始化后，本局不再自动套用）'), true)

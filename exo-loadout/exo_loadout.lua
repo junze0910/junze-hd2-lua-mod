@@ -17,7 +17,7 @@
 --  红线：本文件**只读 + 只写自己的目标**，不碰别的字段。
 -- ===========================================================================
 
-local VERSION = '0.8.0'
+local VERSION = '0.8.1'
 local MOD = 'mods/dsh/exo_loadout'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, phase = 'starting', writes = 0, refusals = 0, errs = 0,
@@ -1129,7 +1129,7 @@ local function set_carry(name)
       if e.key ~= k then CFG.extra = e.key break end
     end
   end
-  if MOD_OPTIONS.refresh_arm_values then pcall(MOD_OPTIONS.refresh_arm_values) end
+  if MOD_OPTIONS.refresh_all_values then pcall(MOD_OPTIONS.refresh_all_values) end
   cfg_save()
   report(('cfg: carry=%s  extra=%s'):format(CFG.carry, CFG.extra), true)
 end
@@ -1183,11 +1183,38 @@ end
 -- ---------------------------------------------------------------- ModOptionsMenu 适配
 -- 存在 _G.ModOptionsMenu 时，把用户设置注册成原生 MODS 页选项。
 
+-- ---------------------------------------------------------------- MOM 分组 + 全局注册表挂钩
+-- 组名统一由 Scanner 提供（`HD2Scanner.mom_group` = 'A HD2 MOD COLLECTION'）；
+-- 旧版 Scanner 没有该字段时用同名字符串兜底。
+local function mom_group()
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) == 'table' and type(S.mom_group) == 'string' and S.mom_group ~= '' then
+    return S.mom_group
+  end
+  return 'A HD2 MOD COLLECTION'
+end
+
+-- 本 mod 的「兜底全内存扫描」「初始化」不再自己占行，挂到 Scanner 的全局按钮上。
+local RESET_HOOKED, FULLSCAN_HOOKED = false, false
+local function hook_global()
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) ~= 'table' then return end
+  if not FULLSCAN_HOOKED and type(S.register_full_scan) == 'function' then
+    local ok, res = pcall(S.register_full_scan, '机甲', start_strat_scan)
+    if ok and res then FULLSCAN_HOOKED = true end
+  end
+  if not RESET_HOOKED and type(S.register_reset) == 'function' then
+    local ok, res = pcall(S.register_reset, '机甲', do_initialize)
+    if ok and res then RESET_HOOKED = true end
+  end
+end
+
 local function register_mod_options()
   if MOD_OPTIONS.registered then return end
   local mom = rawget(_G, 'ModOptionsMenu')
   if type(mom) ~= 'table' or mom.api ~= 1 then return end
   MOD_OPTIONS.registered = true
+  local MOM_GROUP = mom_group()
 
   -- 左右手分池：左臂只出左件，右臂只出右件
   local side_items = { L = {}, R = {} }
@@ -1246,12 +1273,12 @@ local function register_mod_options()
   MOD_OPTIONS.carry_id, MOD_OPTIONS.extra_id = carry_id, extra_id
   local body_choices = {}
   for i, e in ipairs(EXO) do body_choices[i] = e.name end
-  mom.register_option(carry_id, { type = 'choice', label = '携带机体', mod = 'EXO 战备自选',
+  mom.register_option(carry_id, { type = 'choice', label = '[机甲] 携带机体', mod = MOM_GROUP,
     choices = body_choices, default = index_of_key(CFG.carry),
     description = '四选一。携带机体的战备附加槽会写入附加机体。' })
   local extra_choices = { '无' }
   for i, e in ipairs(EXO) do extra_choices[#extra_choices + 1] = e.name end
-  mom.register_option(extra_id, { type = 'choice', label = '附加机体', mod = 'EXO 战备自选',
+  mom.register_option(extra_id, { type = 'choice', label = '[机甲] 附加机体', mod = MOM_GROUP,
     choices = extra_choices, default = index_of_extra(CFG.extra),
     description = '可选无；选无时不写附加，并尽量恢复原值。选好后由 AOB 直取记录自动写入，不需要扫描。' })
 
@@ -1268,47 +1295,14 @@ local function register_mod_options()
       ARM_IDS[role .. '.' .. slot] = id
       local body = role_body(role)
       mom.register_option(id, { type = 'choice',
-        label = role_label(role) .. ((slot == 'L') and ' 左臂' or ' 右臂'),
-        mod = 'EXO 战备自选', choices = side_choices[slot],
+        label = '[机甲] ' .. role_label(role) .. ((slot == 'L') and ' 左臂' or ' 右臂'),
+        mod = MOM_GROUP, choices = side_choices[slot],
         default = body and index_of_item(slot, arm_item(body, slot)) or 1,
         description = '左臂只列左件、右臂只列右件；只在当前携带两台之间互换，非法组合回退。' })
     end
   end
   MOD_OPTIONS.arm_ids = ARM_IDS
 
-  local scan_id, reset_id = 'exo_loadout.scan_now', 'exo_loadout.reset'
-  MOD_OPTIONS.scan_id, MOD_OPTIONS.reset_id = scan_id, reset_id
-  -- description 是**函数**：MOM 每次开 ESC 菜单都会重算（mod_options_menu API v2）。
-  -- 「灰字 = 不用点 / 亮起来 = 该点了」那套提示搬到这里，反正旧面板已退役。
-  mom.register_option(scan_id, { type = 'toggle', label = '兜底：全内存扫描（正常不用点）',
-    mod = 'EXO 战备自选', default = false,
-    description = function()
-      local ok, txt = pcall(function()
-        local head, st = '当前定位方式：', nil
-        if AOB.api then
-          local ok2, s2 = pcall(AOB.api.strat_table_status)
-          st = (ok2 and type(s2) == 'table') and s2 or nil
-        end
-        if not AOB.api then
-          head = head .. '无 AOB（Scanner 缺失或版本太旧）→ 只有本开关能兜底'
-        elseif st and st.state == 'ok' then
-          head = head .. 'AOB 直取已就绪 —— 不需要点这个开关'
-        else
-          head = head .. 'AOB ' .. tostring(st and st.state or '?')
-            .. (st and st.reason and ('（' .. tostring(st.reason) .. '）') or '')
-            .. ' → 需要本开关兜底'
-        end
-        return head .. '\n\n正常情况下附加战备不需要扫描：Scanner 用 AOB 直取记录后自动写入。'
-          .. '\n只有出现上面那种「需要兜底」的情况（或日志里 AOB 报错 / not-found）时，'
-          .. '才点它退回旧的「全内存搜 package 值」（较慢，且仍需手动触发）。'
-      end)
-      if not ok or type(txt) ~= 'string' or txt == '' then return '战备定位状态读不出来（看 ExoLoadout.log）' end
-      if #txt > 390 then txt = txt:sub(1, 390) end
-      return txt
-    end })
-  mom.register_option(reset_id, { type = 'toggle', label = '初始化（原装 + 恢复战备字段 + CFG 复位）',
-    mod = 'EXO 战备自选', default = false,
-    description = '写回原装手臂、恢复附加/use 原值，并把 CFG 回默认。' })
 
   local function refresh_arm_values()
     local c, x = pick_carry(), pick_extra()
@@ -1407,22 +1401,18 @@ local function register_mod_options()
     end
   end
 
-  mom.on_change(scan_id, function(v)
-    if not v then return end
-    start_strat_scan()
-    mom.set(scan_id, false)
-  end)
+  -- 把 MOM 的 6 个下拉拨回当前 cfg（初始化之后调；deactivate 时由 Scanner 的全局按钮触发）
+  local function refresh_body_values()
+    pcall(mom.set, carry_id, index_of_key(CFG.carry))
+    pcall(mom.set, extra_id, index_of_extra(CFG.extra))
+  end
+  MOD_OPTIONS.refresh_body_values = refresh_body_values
+  MOD_OPTIONS.refresh_all_values = function()
+    pcall(refresh_body_values)
+    if MOD_OPTIONS.refresh_arm_values then pcall(MOD_OPTIONS.refresh_arm_values) end
+  end
 
-  mom.on_change(reset_id, function(v)
-    if not v then return end
-    do_initialize()
-    mom.set(carry_id, index_of_key(CFG.carry))
-    mom.set(extra_id, index_of_extra(CFG.extra))
-    refresh_arm_values()
-    mom.set(reset_id, false)
-  end)
-
-  report('ModOptionsMenu: EXO 设置已注册到原生 MODS 页（左右手分池）', true)
+  report(('ModOptionsMenu: 已注册到「%s」（6 行：携带 / 附加 / 手臂×4；兜底扫描与初始化在 Scanner 的全局按钮）'):format(MOM_GROUP), true)
 end
 -- ---------------------------------------------------------------- 挂载
 local orig = update
@@ -1438,8 +1428,13 @@ if type(orig) == 'function' then
       state.errs = state.errs + 1
       if state.errs <= 5 then report('ModOptionsMenu error: ' .. tostring(err3)) end
     end
+    local ok4, err4 = pcall(hook_global)
+    if not ok4 then
+      state.errs = state.errs + 1
+      if state.errs <= 5 then report('Scanner 全局挂钩 error: ' .. tostring(err4)) end
+    end
     return orig(...)
   end
 end
 
-report(('已加载 v%s（ModOptionsMenu 适配；HD2Menu 页面已退役）'):format(VERSION), true)
+report(('已加载 v%s（MOM 6 行；兜底扫描/初始化在 Scanner 的全局按钮；HD2Menu 页面已退役）'):format(VERSION), true)

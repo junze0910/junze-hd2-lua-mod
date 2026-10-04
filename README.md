@@ -16,7 +16,7 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 | **Guard Dog Loadout** | — | Guard dog's mounted weapon: **3-way selectable** (vanilla AR-23P / SEAF MG-43 / custom hash) — replaces *Stronger Kinetic Guard Dog* |
 | **TD-110 Loadout** | — | TD-110 mount slots: **4 modes** (vanilla / co-op / busy / custom) + an independent **360° yaw** toggle — replaces *TD-110 Co-Op* and *Busier TD-110 Driver* |
 | **EXO Loadout** | — | EXO stratagem + arm loadout, fully configurable — replaces the two *More Balanced Exosuit* builds (no more "pick one") |
-| **Custom Supply** | **Logistics** | Turns the supply rack's **4 slots** into a loadout: what you put in decides **what the supply drops**, how much you put in decides **the cooldown** (30 s empty → 150 s full). Four independent dropdowns in the game's native MODS page. **Requires Mod Options Menu v1.1+ and Scanner v0.8.0+** |
+| **Custom Supply** | **Logistics** | Turns the supply rack's **4 slots** into a loadout: what you put in decides **what the supply drops**, how much you put in decides **the cooldown** (30 s empty → 150 s full). Four independent dropdowns in the game's native MODS page. **Requires Mod Options Menu v1.1+ and Scanner v0.8.1+** |
 | **Unlock Kit** | **Logistics** | Adds a per-target **on/off switch** to the game's native MODS page — **2 weapons** (clone a same-class template, identity fields only) + **6 stratagems** (`+0x80 bit1` + record `+0x14=2`) + a read-only recon row. **Explicit whitelist — no 'unlock everything'**; no attachment unlocks. HD2 Scanner optional. |
 
 Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-mod/tree/main/dist) (prebuilt zip) · source code in each subfolder.
@@ -45,7 +45,7 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 | **Guard Dog Loadout** | **护卫犬挂载自选** | **单兵** | 护卫犬挂载武器**三选一**（原装 AR-23P / SEAF MG-43 / 自定义哈希）—— 取代「更强的实弹狗」 |
 | **TD-110 Loadout** | **TD-110 挂载切换** | **载具** | TD-110 两个挂载位**四档模式**（原装 / 合作 / 忙碌 / 自定义）+ 射界 360° 独立开关 —— 取代 `TD-110 Co-Op` 与「更忙的驾驶员」 |
 | **EXO Loadout** | **EXO 战备自选** | **载具** | 携带机体四选一 + 附加机体三选一 + 手臂跨机体互换（只在携带两台间）—— 取代外骨骼两版，**不再需要二选一** |
-| **Custom Supply** | **自定义补给** | **后勤** | 补给包架**四个槽位独立选择**（无 / 弹药盒 / 针剂盒 / 手雷盒 / 补给包 / 医疗包 / 爆炸筒）—— **放什么决定补给给什么，放多少决定冷却多久**（30 s ~ 150 s）；**v0.1e（已实机通过，已发布）**新增 **SEAF 大炮覆盖**（仅当存在超级地球大炮时手动开启，下层 4 槽可选 6 种炮弹 / 爆炸筒，选「补给类」回退上层）；**需 Mod Options Menu v1.1+ 与 Scanner v0.8.0+** |
+| **Custom Supply** | **自定义补给** | **后勤** | 补给包架**四个槽位独立选择**（无 / 弹药盒 / 针剂盒 / 手雷盒 / 补给包 / 医疗包 / 爆炸筒）—— **放什么决定补给给什么，放多少决定冷却多久**（30 s ~ 150 s）；**v0.1e（已实机通过，已发布）**新增 **SEAF 大炮覆盖**（仅当存在超级地球大炮时手动开启，下层 4 槽可选 6 种炮弹 / 爆炸筒，选「补给类」回退上层）；**需 Mod Options Menu v1.1+ 与 Scanner v0.8.1+** |
 | **Unlock Kit** | **解锁台** | **后勤** | 把「解锁指定条目」做成 **MODS 页一行一个是/否开关**：武器 2 把（克隆同类样板，只换身份字段）＋ 战备 6 条（② 选择位 + ③ 记录状态）＋ 只读侦察。**只做指定条目，不做「全解锁」**；**不含配件解锁** |
 
 > **分类（Tags）与发布线**：`优化`（Optimization）只有 **No Large Piercing** 两版；本次起另按**发布线**打 tag —— **前置** `core-v2.0`（HD2 Scanner）、**单兵** `infantry-v2.0`（AC-8 / 实弹狗 / 护卫犬自选）、**载具** `vehicle-v2.0`（TD-110 挂载 / EXO 自选）、**后勤** `logistics-v0.1alpha`（**自定义补给**；**解锁台**同属后勤线，包见 `dist/`）。
@@ -71,24 +71,29 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 
    | 文件 | Mod |
    |---|---|
-   | `HD2-Scanner-v0.8.0.zip` | **HD2 Scanner** —— 下面标「需 Scanner」的包都要装它（v0.8.0 新增 AOB 战备表 API） |
-   | `AC8-Rack-Backpack-v2.1.zip` | AC-8 废案 75 发备弹背包（**需 Scanner**；替换 v2.0） |
+   | `HD2-Scanner-v0.8.1.zip` | **HD2 Scanner** —— 下面标「需 Scanner」的包都要装它（v0.8.0：AOB 战备表 API；**v0.8.1：统一 MODS 页分组 + 全局「初始化」/「全内存扫描」注册表**） |
+   | `AC8-Rack-Backpack-v2.2.zip` | AC-8 废案 75 发备弹背包（**需 Scanner**；v2.2 撤掉 MODS 行 —— 它本来就全自动，不需要手动动作） |
    | `Guard-Dog-MG43-v2.1.zip` | 更强的实弹狗（**已废弃 / 不再维护**：已被「护卫犬挂载自选」取代，两者改同一条记录的同一个槽位**二选一**；**v2.1 是最后一版**，仅作留档随本批发布，新装请用护卫犬自选） |
-   | `GuardDogLoadout-v1.0.1.zip` | 护卫犬挂载武器自选（**需 Scanner**；与「更强的实弹狗」二选一；替换 v1.0） |
-   | `TD-110-Loadout-v1.0.1.zip` | TD-110 挂载四档 + 射界 360°（**需 Scanner**；取代下面两个 TD-110 包） |
-   | `ExoLoadout-v0.8.0.zip` | EXO 战备 + 手臂自选（**需 Scanner v0.8.0+**；附加战备由 AOB 直取、自动写入，取代 v0.7.2） |
-| `Custom-Supply-v0.1e.zip` | **自定义补给 v0.1e** —— 上层补给内容 + 冷却自定义 + **SEAF 大炮覆盖**（**需 Mod Options Menu v1.1+ 与 Scanner v0.8.0+**；MODS 页上层 4 槽 / 开关 / 下层 4 槽，下拉描述实时显示冷却） |
-   | `Unlock-Kit-v0.6.zip` | **解锁台** —— 一行一个「解锁 X」开关：武器 P-41 / G-11 + 战备 6 条（ID5/26/105/135/146/50）+ 只读侦察；**不需要 Scanner**（检测到则优先用它的战备表 API） |
+   | `GuardDogLoadout-v1.0.2.zip` | 护卫犬挂载武器自选（**需 Scanner**；与「更强的实弹狗」二选一；v1.0.2 只剩「下挂物品」一行，「初始化」改由 Scanner 的全局按钮触发） |
+   | `TD-110-Loadout-v1.0.2.zip` | TD-110 挂载 —— MODS 页 **3 行**（预设 / 炮手槽位 / 驾驶员槽位），**射界 360° 改成默认行为**（**需 Scanner**；取代下面两个 TD-110 包） |
+   | `ExoLoadout-v0.8.1.zip` | EXO 战备 + 手臂自选（**需 Scanner v0.8.1+**；6 行：携带 / 附加 / 手臂×4；「兜底扫描」「初始化」搬到 Scanner 的全局按钮） |
+| `Custom-Supply-v0.1f.zip` | **自定义补给 v0.1f** —— 补给内容 + 冷却自定义 + **SEAF 大炮覆盖**（**需 Mod Options Menu v1.1+ 与 Scanner v0.8.1+**；MODS 页只剩 **5 行**：1 行「模式」+ 4 行「槽位」，切到大炮模式后同一条下拉**直接换成炮弹**，下拉描述实时显示冷却） |
+   | `Unlock-Kit-v0.7.zip` | **解锁台** —— 一行一个「解锁 X」开关：武器 P-41 / G-11 + 战备 **5 条**（ID5/26/105/135/146）；**不需要 Scanner**（检测到则优先用它的战备表 API） |
    | `TD-110-Co-Op-v1.1.zip` | 更强调合作的 TD-110（**已废弃**，见旧线 `v1.2.1`；`dist/` 已下架） |
    | `TD-110-Busier-Driver-v1.2.zip` | 更忙的 TD-110 驾驶员（**已废弃**，与上一个**二选一**；`dist/` 已下架） |
    | `More-Balanced-Exosuit-Patriot-v1.2.zip` | 更均衡的外骨骼 · **携带爱国者版**（携带爱国者战备 → 额外携带解放者战备；可用次数 1、冷却 0） |
    | `More-Balanced-Exosuit-Emancipator-v1.2.zip` | 更均衡的外骨骼 · **携带解放者版**（同上，方向相反）。与上一个**二选一** |
    | `No-Large-Piercing-v1.4.zip` | 没有大型穿刺（大型穿刺档 → `0` None，完全不打） |
    | `No-Large-Piercing-Medium-v1.4.zip` | 没有大型穿刺 · 中口径版（大型穿刺档 → `2` PiercingMedium）。与上一个**二选一** |
+
+   > 🗂️ **MODS 页分组（2026-10-05 起）**：上面所有包在游戏 ESC → MODS 页里的选项**统一并进同一个分组 `A HD2 MOD COLLECTION`**。
+   > MOM 只显示前 8 个分组（按大写标题的字节序排），中文标题一定会被截掉；并进一组、且用 `A ` 开头，就永远排第 1。
+   > 分组名与「初始化（全局）」「全内存扫描（兜底）」两张成员注册表都由 **HD2 Scanner v0.8.1+** 提供。
+
 2. 用 mod 管理器导入并启用（**不要手动把 `Addon/` 拷进 `data/`** —— 多个 addon 的包内文件名相同，会互相覆盖）；
    * 本次版本的完整说明（含 TD-110 挂载的时序规则）见 [`RELEASE-NOTES.md`](RELEASE-NOTES.md)；
    * 下载包校验：`dist/SHA256SUMS.txt`——
-     `cd dist; certutil -hashfile TD-110-Loadout-v1.0.1.zip SHA256`（Git Bash：`sha256sum -c SHA256SUMS.txt`）；
+     `cd dist; certutil -hashfile TD-110-Loadout-v1.0.2.zip SHA256`（Git Bash：`sha256sum -c SHA256SUMS.txt`）；
 3. 进游戏。数据表是在任务里按需加载的，一般进图后约 1 分钟生效。
    * **装 `TD-110 Co-Op` 时有一条额外规则**：挂载表（`MountComponentData`）是**生成载具时读一次**的静态配置，
      补丁必须**早于召唤载具** —— 进任务后先等 `TankStormCoop.log` 出现

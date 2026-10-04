@@ -1,14 +1,14 @@
 # Custom Supply
 
 **Project / download:** https://github.com/junze0910/junze-hd2-lua-mod/releases/latest
-**Current version:** v0.1e (in-game verified, released)
+**Current version:** v0.1f
 
 ## Description
 
 Turns the supply rack's **4 slots** into something you configure: **what you put in decides what the supply drops — how much you put in decides the cooldown.**
 
 - Upper slots: one of 7 items — `None / Ammo box / Stim box / Grenade box / Supply crate / Medical crate / Explosive Barrel`
-- v0.1e adds **SEAF Artillery Override**: when the Super Earth Artillery exists, manually enable it and fill the lower 4 slots with 6 shell types / Explosive Barrel; choosing `Supply` falls back to the upper slot
+- v0.1f rework: the MODS page is now only **5 rows** — one **Mode** row (Supply / Artillery Override) plus four **Slot** rows. Switching to Artillery mode swaps those same four dropdowns over to SEAF shells (picking `Supply` falls back to that slot's supply item); each mode remembers its own selection
 - Cooldown is computed from the effective contents: **30 s (all four empty / explosive barrels) up to 150 s (four stim boxes / supply crates / Mini Nukes)**
 - Everything happens in **runtime memory** — no game files are modified; disable the mod and restart to fully revert
 
@@ -16,7 +16,7 @@ Turns the supply rack's **4 slots** into something you configure: **what you put
 
 ### 1. Four independent slots
 
-Configured in the game's native **ESC → MODS page → "自定义补给"**, four independent dropdowns.
+Configured in the game's native **ESC → MODS page → group `A HD2 MOD COLLECTION`**: `[补给] 模式` + `[补给] 槽位 1~4`.
 
 ### 2. Contents decide the cooldown
 
@@ -48,7 +48,7 @@ cooldown = 30 + 5·ammo + 30·stim + 15·grenade + 30·supply_crate + 15·medica
 
 Stim boxes and grenade boxes get a tuned offset/rotation on the rack; the Explosive Barrel and the other items keep zero.
 
-### 2.5 SEAF Artillery Override (v0.1e)
+### 2.5 Artillery Override mode (since v0.1f)
 
 Only for missions where the **Super Earth Artillery / SEAF Artillery** exists; the player enables the toggle manually.
 
@@ -85,10 +85,10 @@ Writes only live in the current game process; restart the game and everything is
 
 ## Operation flow
 
-1. **Install prerequisites**: Bingus Shared Loader (v15+ / API 1) + **HD2 Scanner v0.8.0+** (required for table location)
-2. **Install** `Custom-Supply-v0.1e.zip`
+1. **Install prerequisites**: Bingus Shared Loader (v15+ / API 1) + **HD2 Scanner v0.8.1+** (table location + the shared MODS group name)
+2. **Install** `Custom-Supply-v0.1f.zip`
 3. **Enter one mission** (the stratagem/rack tables only load in-mission)
-4. **Configure**: ESC → MODS → the group, four upper dropdowns; if the Super Earth Artillery exists, manually enable **SEAF Artillery Override** and configure the four lower Artillery slots; each description shows the live cooldown
+4. **Configure**: ESC → MODS → `A HD2 MOD COLLECTION` → `[补给] 槽位 1~4` (each description shows the live cooldown); if the Super Earth Artillery exists, switch `[补给] 模式` to Artillery Override and the same four dropdowns become shells
 5. **Takes effect** immediately; if changed mid-mission, from the next mission
 
 ## Requirements

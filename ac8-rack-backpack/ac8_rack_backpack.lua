@@ -33,7 +33,7 @@
 --  设计说明：docs/AC8-Rack-Backpack-v6-DESIGN.md
 -- ===========================================================================
 
-local VERSION = '2.1'
+local VERSION = '2.2'
 local MOD = 'mods/dsh/ac8_rack_backpack'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, {
@@ -858,42 +858,11 @@ local function frame()
   run_slice()
 end
 
--- ---------------------------------------------------------------- ModOptionsMenu（本 mod 唯一的界面入口）
--- HD2Menu 页面体系 2026-10-04 退役（渲染宿主不再发包）：进度/状态看 Logs\AC8RackBackpack.log，
--- 这里只留一个手动动作。MOM 没有只读状态行，所以动作型 toggle 点完自动弹回。
-local MOM = { registered = false }
-local function register_mod_options()
-  if MOM.registered then return end
-  local mom = rawget(_G, 'ModOptionsMenu')
-  if type(mom) ~= 'table' or mom.api ~= 1 or type(mom.register_option) ~= 'function' then return end
-  MOM.registered = true
-  local id = 'ac8_rack.write_now'
-  local okm, why = mom.register_option(id, {
-    type = 'toggle', mod = 'AC-8 机炮包架', default = false,
-    label = '立刻写一次',
-    description = '按 Scanner 广播的地址重写一次挂载（点完自动弹回）。进度看 Logs\\AC8RackBackpack.log。' })
-  if not okm then report('ModOptionsMenu: 注册失败 ' .. tostring(why), true) return end
-  pcall(mom.on_change, id, function(v)
-    if not v then return end
-    local S = SCAN.api
-    if not S then
-      report('手动写入：没有 Scanner 前置', true)
-    else
-      local snap = S.poll(RACK_TYPE)
-      local cnt = 0
-      if type(snap) == 'table' and type(snap.entries) == 'table' then
-        for i2 = 1, #snap.entries do
-          if type(snap.entries[i2]) == 'table' then
-            pcall(apply, snap.entries[i2].addr) cnt = cnt + 1
-          end
-        end
-      end
-      report(('手动写入：处理了 %d 份表'):format(cnt), true)
-    end
-    pcall(mom.set, id, false)
-  end)
-  report('ModOptionsMenu: 已注册「立刻写一次」', true)
-end
+-- ---------------------------------------------------------------- 界面（2026-10-04：不再注册 MOM 行）
+-- HD2Menu 页面体系 2026-10-04 退役（渲染宿主不再发包）；原来那条 MOM 动作行
+-- （「立刻写一次」）也一并撤掉 —— 本 mod 完全靠 Scanner 广播自动写，
+-- 进度/状态只看 Logs\AC8RackBackpack.log。撤掉是为了不占 MOM 的分组名额
+-- （MOM 只显示前 8 个分组，见 docs/CUSTOM-SUPPLY-MOM-交接.md）。
 
 
 -- ---------------------------------------------------------------- 挂载
@@ -905,7 +874,6 @@ if type(original_update) == 'function' then
       state.errs = state.errs + 1
       if state.errs <= 5 then report('frame error: ' .. tostring(err)) end
     end
-    pcall(register_mod_options)
     return original_update(...)
   end
 else

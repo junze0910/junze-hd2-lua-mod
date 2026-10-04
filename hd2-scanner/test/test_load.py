@@ -82,7 +82,7 @@ def main():
           lua4.eval("rawget(_G,'mods/junze/hd2_scanner').cfg.probe") is True)
     os.remove(cfg)
 
-    # ---- Scanner 自己的 MOM 面板（3 行：扫描状态 / 解析战备表 / 写诊断）----
+    # ---- Scanner 自己的 MOM 面板（4 行：扫描状态 / 解析战备表 / 全内存扫描 / 初始化）----
     # HD2Menu 退役后，这是 Scanner 唯一的界面入口；MOM 没有只读状态行，
     # 所以「状态」挂在 label（≤64 字符）与 description（≤400 字符）两个函数上，
     # 行本身做成动作（点一下 = 立刻扫一轮，然后自动弹回）。
@@ -100,8 +100,11 @@ end)()
     harness.boot(luaM)
     luaM.execute("for i=1,10 do update(0.016) end")
     ids = luaM.eval("(function() local t={} for k in pairs(ModOptionsMenu.opts) do t[#t+1]=k end table.sort(t) return table.concat(t,',') end)()")
-    check("MOM: 注册了 3 行（状态/AOB/诊断）",
-          ids == "hd2_scanner.aob,hd2_scanner.diag,hd2_scanner.status", ids)
+    check("MOM: 注册了 4 行（状态/AOB/全内存扫描/初始化）",
+          ids == "hd2_scanner.aob,hd2_scanner.full,hd2_scanner.reset,hd2_scanner.status", ids)
+    check("MOM: mom_group = 'A HD2 MOD COLLECTION'",
+          luaM.eval("rawget(_G,'HD2Scanner').mom_group") == "A HD2 MOD COLLECTION",
+          luaM.eval("tostring(rawget(_G,'HD2Scanner').mom_group)"))
     check("MOM: 没有 probe/draw/claim 行（④~⑧ 待定，不进）",
           luaM.eval("ModOptionsMenu.opts['hd2_scanner.probe'] == nil "
                     "and ModOptionsMenu.opts['hd2_scanner.draw'] == nil "
@@ -129,14 +132,52 @@ end)()
           luaM.eval("rawget(_G,'HD2Scanner').strat_table_status().state"))
     check("MOM: AOB 行弹回 false",
           "hd2_scanner.aob=false" in luaM.eval("table.concat(ModOptionsMenu.sets, ',')"))
-    # ③ 诊断行：整块状态写进日志
-    luaM.execute("ModOptionsMenu.changes['hd2_scanner.diag'](true)")
-    luaM.execute("for i=1,2 do update(0.016) end")
-    logf2 = os.path.join(harness.WORK, "Logs", "HD2Scanner.log")
-    logtxt = open(logf2, encoding="utf-8", errors="replace").read()
-    check("MOM: 诊断行把状态写进了日志", "MOM 诊断" in logtxt)
-    check("MOM: 诊断行弹回 false",
-          "hd2_scanner.diag=false" in luaM.eval("table.concat(ModOptionsMenu.sets, ',')"))
+    # ③ 全内存扫描（兜底）行：置 urgent + 触发 AOB，并弹回
+    luaM.execute("rawget(_G,'HD2Scanner').urgent = false")
+    luaM.execute("ModOptionsMenu.changes['hd2_scanner.full'](true)")
+    check("MOM: 全内存扫描行置内核 urgent",
+          luaM.eval("rawget(_G,'HD2Scanner').status().urgent") is True)
+    check("MOM: 全内存扫描行弹回 false",
+          "hd2_scanner.full=false" in luaM.eval("table.concat(ModOptionsMenu.sets, ',')"))
+    # ④ 初始化行：跑掉注册的重置回调，并弹回
+    luaM.execute("rawget(_G,'HD2Scanner').register_reset('probe_mod', "
+                 "function() _G.__RESET_RAN = true end)")
+    check("MOM: register_reset 非函数/空名 -> false",
+          luaM.eval("(function() local ok = rawget(_G,'HD2Scanner').register_reset('', function() end) "
+                    "return ok end)()") is False)
+    check("MOM: reset_names 列出已注册的 mod",
+          luaM.eval("table.concat(rawget(_G,'HD2Scanner').reset_names(), ',')") == "probe_mod")
+    # ---- 跨 mod 集成：假成员 mod 用 Scanner 的 API 并入同一组 ----
+    luaM.execute(r"""
+local S = rawget(_G, 'HD2Scanner')
+local MOM = rawget(_G, 'ModOptionsMenu')
+assert(type(S.mom_group) == 'string' and S.mom_group ~= '', 'mom_group 未导出')
+MOM.register_option('fake.a', { type = 'toggle', label = '假成员 A', mod = S.mom_group, default = false })
+MOM.register_option('fake.b', { type = 'toggle', label = '假成员 B', mod = S.mom_group, default = false })
+S.register_reset('假成员', function() _G.__FAKE_RESET = (_G.__FAKE_RESET or 0) + 1 end)
+S.register_reset('第二成员', function() _G.__FAKE_RESET2 = true end)
+S.register_full_scan('假成员', function() _G.__FAKE_SCAN = (_G.__FAKE_SCAN or 0) + 1 end)
+""")
+    check("跨 mod: 所有行共用同一个分组名",
+          luaM.eval("(function() local t={} for k,o in pairs(ModOptionsMenu.opts) do t[#t+1]=o.mod end "
+                    "for i=2,#t do if t[i]~=t[1] then return false end end return t[1] end)()")
+          == "A HD2 MOD COLLECTION")
+    check("跨 mod: 一行都不缺（4 + 假成员 2）",
+          luaM.eval("(function() local n=0 for _ in pairs(ModOptionsMenu.opts) do n=n+1 end return n end)()") == 6)
+    check("跨 mod: reset_names 列出两个成员",
+          luaM.eval("table.concat(rawget(_G,'HD2Scanner').reset_names(), ',')") == "probe_mod,假成员,第二成员",
+          luaM.eval("table.concat(rawget(_G,'HD2Scanner').reset_names(), ',')"))
+    check("跨 mod: full_scan_names 列出成员",
+          luaM.eval("table.concat(rawget(_G,'HD2Scanner').full_scan_names(), ',')") == "假成员")
+    luaM.execute("rawget(_G,'HD2Scanner').run_full_scans()")
+    check("跨 mod: 全内存扫描跑到了成员回调",
+          luaM.eval("_G.__FAKE_SCAN") == 1)
+    luaM.execute("ModOptionsMenu.changes['hd2_scanner.reset'](true)")
+    check("跨 mod: 全局初始化跑到全部成员回调",
+          luaM.eval("_G.__FAKE_RESET") == 1 and luaM.eval("_G.__FAKE_RESET2") is True)
+    check("MOM: 初始化行跑了注册的回调", luaM.eval("_G.__RESET_RAN") is True)
+    check("MOM: 初始化行弹回 false",
+          "hd2_scanner.reset=false" in luaM.eval("table.concat(ModOptionsMenu.sets, ',')"))
 
     # ---- 扫描内核（阶段 1）对外接口 ----
     lua5 = harness.new_lua()

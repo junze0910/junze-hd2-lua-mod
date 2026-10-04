@@ -334,7 +334,65 @@ local pkg  = rec and rec:sub(0xA9, 0xB0)  -- package
 
 AOB 只回答「战备表在哪」。该表不是 LDLD 块，所以不会出现在 `request()` / `poll()`
 的广播里，也没有 `generation` —— 表基址变化要消费者自己每秒复核一次记录内容。
-## 5. 已知数据表类型哈希
+## 5. MODS 页分组与成员注册表 API（**v0.8.1 起**）
+
+### 5.1 `HD2Scanner.mom_group`
+
+**字符串**。本仓库所有 mod 在 ModOptionsMenu 里注册选项时统一使用的**分组名**：
+
+```lua
+local S = rawget(_G, 'HD2Scanner')
+local group = (type(S) == 'table' and type(S.mom_group) == 'string' and S.mom_group ~= '')
+              and S.mom_group or 'A HD2 MOD COLLECTION'   -- 旧版 Scanner 兜底：同名硬编码
+mom.register_option('mymod.thing', { type = 'toggle', label = '…', mod = group, default = false })
+```
+
+为什么必须这样：MOM **只显示前 8 个分组**（`patch_5.lua` 的 `MOD_BUTTONS = 8`），按**大写标题的字节序**
+排完后 `while #list > 8 do table.remove(list) end` 直接截断。中文标题一定排在 ASCII 之后 ⇒ 会被**整组砍掉**。
+`A HD2 MOD COLLECTION` 以 `A ` 开头（空格 `0x20` < `AC-8` 的 `C` `0x43`），永远排第 1。
+
+⚠ **组内总行数上限 32**（MOM 的 `MAX_ROWS = 32`；第 33 行注册会直接返回 `false`，那一行不会出现）。加行前先算总数。
+
+### 5.2 `register_reset(name, fn)` / `run_resets()` / `reset_names()`
+
+把本 mod 的「初始化」挂到本组的**全局初始化按钮**上（Scanner 组的第 4 行）。
+
+```lua
+S.register_reset('机甲', function()
+  -- 全部写回原装 + 各自 cfg 复位；必须自己兜异常
+end)
+```
+
+- `name`：显示用的短名（会出现在全局按钮的描述里，`reset_names()` 会列出它），非空字符串
+- `fn`：无参函数。Scanner 用 `pcall` 调，单个失败只记名字、不影响其它成员
+- 返回 `true` / `false, reason`；同一个 `name` 重复注册 = 覆盖
+- `run_resets()` 返回 `done, failed` 两个数组（都已排序）
+- 「初始化」是**全局动作**：装了几个注册过的 mod 就还原几个，不能只还原其中一个
+
+### 5.3 `register_full_scan(name, fn)` / `run_full_scans()` / `full_scan_names()`
+
+同上，挂到本组的**「全内存扫描（兜底）」按钮**上（Scanner 组的第 3 行）。
+
+```lua
+S.register_full_scan('机甲', function()
+  -- 退回「全内存搜 package 值」这条兜底路径
+end)
+```
+
+点那个按钮时 Scanner 会依次做三件事：
+① 置内核 `urgent`（立刻走一遍完整内存扫描）② 重新解析 AOB 战备表 ③ 调用所有注册的 `fn`。
+
+### 5.4 版本要求与兼容
+
+| API | 最低 Scanner 版本 |
+|---|---|
+| `strat_table_*` | v0.8.0 |
+| `mom_group` / `register_reset` / `register_full_scan` | **v0.8.1** |
+
+旧版 Scanner 没有这些字段 ⇒ 消费商务必先 `type(S.register_reset) == 'function'` 再挂钩，
+`mom_group` 则用同名字符串兜底（本仓库各 mod 的做法见 `guard_dog_loadout.lua` 的 `mom_group()`）。
+
+## 6. 已知数据表类型哈希
 
 | 表 | type_hash |
 |---|---:|
@@ -346,7 +404,7 @@ AOB 只回答「战备表在哪」。该表不是 LDLD 块，所以不会出现�
 | `ProjectileSettings` | `0xBD4042C2` |
 | `ExplosionSettings` | `0x2AEA2592` |
 
-## 6. 最小消费者示例
+## 7. 最小消费者示例
 
 ```lua
 local S = rawget(_G, 'HD2Scanner')
@@ -367,7 +425,7 @@ local function frame()
 end
 ```
 
-## 7. 界面与消费者的约定（2026-10-04 起）
+## 8. 界面与消费者的约定（2026-10-04 起）
 
 - ⛔ **不要再注册 `_G.HD2Menu` / `HD2MenuQueue`** —— 那套页面体系（自绘面板 + 对象注册表）
   已整体退役：渲染宿主 `ui.lua` 不再打包，`registry.lua` 已删除。照旧写法注册只会得到一张
@@ -657,7 +715,43 @@ Consumers should keep a fallback path (ExoLoadout falls back to a full-memory
 The AOB path only answers "where is the stratagem table". The table is not an LDLD
 block, so it never appears in `request()` / `poll()` and has no `generation` — consumers
 re-validate the record contents themselves.
-## 5. Known type hashes
+## 5. MODS-page group & member registries (since v0.8.1)
+
+### 5.1 `HD2Scanner.mom_group` (string)
+
+The single group name every mod from this repo registers its ModOptionsMenu options under:
+
+```lua
+local S = rawget(_G, 'HD2Scanner')
+local group = (type(S) == 'table' and type(S.mom_group) == 'string' and S.mom_group ~= '')
+              and S.mom_group or 'A HD2 MOD COLLECTION'   -- fallback for older Scanner
+mom.register_option('mymod.thing', { type = 'toggle', label = '…', mod = group, default = false })
+```
+
+Why: MOM shows **only the first 8 groups** (`MOD_BUTTONS = 8`), sorted by the *upper-cased* title and then truncated.
+CJK titles always sort after ASCII, so such a group gets dropped entirely. `A HD2 MOD COLLECTION` starts with `A `
+(space `0x20` < `C` `0x43`) so it is always group #1.
+
+⚠ **Max 32 options per group** (`MAX_ROWS = 32`); registering a 33rd returns `false` and the row never appears.
+
+### 5.2 `register_reset(name, fn)` / `run_resets()` / `reset_names()`
+
+Hooks the mod's "initialise" into the group's **global reset button** (row 4).
+
+- `fn` is called with no arguments inside `pcall`; failing members are reported by name only.
+- `run_resets()` returns sorted `done, failed` arrays. It is a **global** action — it resets every registered mod.
+
+### 5.3 `register_full_scan(name, fn)` / `run_full_scans()` / `full_scan_names()`
+
+Hooks the mod's fallback full-memory search into the group's **"full memory scan" button** (row 3).
+Pressing it: ① raises the kernel `urgent` flag, ② re-parses the AOB stratagem table, ③ calls every registered `fn`.
+
+### 5.4 Compatibility
+
+`mom_group` / `register_reset` / `register_full_scan` require **Scanner v0.8.1+**.
+Always probe `type(S.register_reset) == 'function'` before hooking; fall back to a hard-coded group name otherwise.
+
+## 6. Known type hashes
 
 | Table | type_hash |
 |---|---:|
@@ -669,7 +763,7 @@ re-validate the record contents themselves.
 | ProjectileSettings | `0xBD4042C2` |
 | ExplosionSettings | `0x2AEA2592` |
 
-## 6. Minimal consumer example
+## 7. Minimal consumer example
 
 ```lua
 local S = rawget(_G, 'HD2Scanner')
@@ -690,7 +784,7 @@ local function frame()
 end
 ```
 
-## 7. UI contract for consumers (since 2026-10-04)
+## 8. UI contract for consumers (since 2026-10-04)
 
 - ⛔ **Do not register `_G.HD2Menu` / `HD2MenuQueue` any more.** That page system (self-drawn panel +
   object registry) is retired: its renderer `ui.lua` is no longer packaged and `registry.lua` is gone.

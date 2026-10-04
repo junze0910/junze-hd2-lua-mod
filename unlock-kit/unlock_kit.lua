@@ -8,7 +8,7 @@
 --     用户于 2026-10-04 决定停线，v0.6 起**整块移除**，代码/结论留档在
 --     hd2-mod/docs/UNLOCK-KIT-交接.md §10（勿再照 v0.4/v0.5 的升级树/槽7 思路继续）。
 -- ===========================================================================
-local VERSION = '0.6'
+local VERSION = '0.7'
 local MOD = 'mods/dsh/unlock_kit'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, writes = 0, errs = 0, undo = {}, status = nil })
@@ -32,8 +32,6 @@ local STRATS = {
   { id = 105, key = 0xEA902C4B, name = '快速侦察载具 FRV（M-102）' },
   { id = 135, key = 0xA9A97CD7, name = 'FRV 炽热型（M-104）' },
   { id = 146, key = 0xB2E060BB, name = '飞鹰·空空导弹（(NOT USED) 废弃条目）' },
-  { id = 50,  key = 0x1B7853AC, name = '风暴漩涡（Maelstrom）' },
-    -- key/记录号来自实机 dump：id=50 key=0x1B7853AC 记录#2927 type=10 state=1
 }
 local RVA_FUNC, SIG_FUNC = 0x136FC20, '\x48\x89\x5c\x24\x08\x48\x8b\xd9\x85\xd2\x75'
 local RVA_LEA_DISP, RVA_LEA_INSN = 0x136FC3A, 0x136FC37
@@ -526,18 +524,29 @@ local function auto_and_verify()
 end
 
 -- ---------------------------------------------------------------- MOM
+-- 组名统一由 Scanner 提供（`HD2Scanner.mom_group` = 'A HD2 MOD COLLECTION'）；
+-- 旧版 Scanner 没有该字段时用同名字符串兜底。
+local function mom_group()
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) == 'table' and type(S.mom_group) == 'string' and S.mom_group ~= '' then
+    return S.mom_group
+  end
+  return 'A HD2 MOD COLLECTION'
+end
+
 local function mom() return rawget(_G, 'ModOptionsMenu') end
 local function register_mom()
   if MOMDONE then return end
   local m = mom()
   if type(m) ~= 'table' or type(m.register_option) ~= 'function' then return end
   MOMDONE = true
+  local MOM_GROUP = mom_group()
   local function on(id, fn)
     if type(m.on_change) == 'function' then pcall(m.on_change, id, fn) end
   end
   for _, t in ipairs(TARGETS) do
     pcall(m.register_option, 'unlock_kit.' .. t.id, {
-      type = 'toggle', label = '解锁 ' .. t.name, mod = '解锁台', default = false,
+      type = 'toggle', label = '[解锁台] 解锁 ' .. t.name, mod = MOM_GROUP, default = false,
       description = ('克隆样板 %s，只替换身份字段；关掉即还原'):format(t.tmpl_name) })
     on('unlock_kit.' .. t.id, function(v)
       local ok, err = pcall(function()
@@ -562,7 +571,7 @@ local function register_mom()
   for _, t in ipairs(STRATS) do
     local id = 'unlock_kit.strat' .. t.id
     pcall(m.register_option, id, {
-      type = 'toggle', label = ('解锁战备 %s（ID%d）'):format(t.name, t.id), mod = '解锁台',
+      type = 'toggle', label = ('[解锁台] 解锁战备 %s（ID%d）'):format(t.name, t.id), mod = MOM_GROUP,
       default = false,
       description = '② StratagemInfo +0x80 bit1 + ③ 注册表记录 +0x14 = 2（实机验证过的配方）；关掉即还原' })
     on(id, function(v)
@@ -574,16 +583,8 @@ local function register_mom()
       if not ok then state.errs = state.errs + 1 report('开关异常: ' .. tostring(err), true) end
     end)
   end
-  pcall(m.register_option, 'unlock_kit.recon', {
-    type = 'toggle', label = '● 侦察（只读）', mod = '解锁台', default = false,
-    description = '打印每个目标的 key / 是否已登记 / 样板下标 / 战备记录与选择位；只读，不写字节' })
-  on('unlock_kit.recon', function(v)
-    if not v then return end
-    pcall(recon)
-    if type(m.set) == 'function' then pcall(m.set, 'unlock_kit.recon', false) end
-  end)
-  report(('已注册 ModOptionsMenu：%d 把武器 + %d 条战备 + 1 个侦察'):format(
-    #TARGETS, #STRATS), true)
+  report(('ModOptionsMenu: 已注册到「%s」（%d 把武器 + %d 条战备；侦察行 2026-10-04 撤掉）'):format(
+    MOM_GROUP, #TARGETS, #STRATS), true)
 end
 
 -- ---------------------------------------------------------------- 挂载

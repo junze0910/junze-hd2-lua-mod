@@ -25,7 +25,7 @@ local MOD = 'mods/junze/hd2_scanner'
 if rawget(_G, MOD) then return end
 
 local P = {
-    version  = '0.8.0',
+    version  = '0.8.1',
     api      = 1,
     status   = 'starting',
     mode     = 'float',      -- 'float' | 'tab'
@@ -34,6 +34,15 @@ local P = {
     hotkey   = 0x78,         -- VK_F9
 }
 rawset(_G, MOD, P)
+
+-- ---------------------------------------------------------------------------
+-- ★ MOM 分组名（2026-10-04）：MOM 只显示**前 8 个分组**（按大写 title 字节序），
+--   中文标题一定排最后被截掉。所有 HD2 mod 统一注册到这一组，名字以 "A " 开头
+--   ⇒ 永远排第 1，稳进前 8。其它 mod 用 `HD2Scanner.mom_group` 取（旧版 Scanner
+--   没有该字段，各 mod 自带同名字符串兜底）。
+--   见 docs/CUSTOM-SUPPLY-MOM-交接.md
+-- ---------------------------------------------------------------------------
+local MOM_GROUP = 'A HD2 MOD COLLECTION'
 
 -- ---------------------------------------------------------------------------
 -- 1. 前置：BSL 或 MDL 任一在场
@@ -251,6 +260,54 @@ do
                 K.strat_slot          = function(id) return AOB.slot(id) end
                 K.strat_rec           = function(id, n) return AOB.rec(id, n) end
             end
+            -- ★ 组名 + 全局「初始化」注册表（2026-10-04）
+            K.mom_group = MOM_GROUP
+            K.resets = {}
+            K.register_reset = function(name, fn)
+                if type(name) ~= 'string' or name == '' or type(fn) ~= 'function' then
+                    return false, 'register_reset(name, fn)'
+                end
+                K.resets[name] = fn
+                return true
+            end
+            K.run_resets = function()
+                local done, failed = {}, {}
+                for name, fn in pairs(K.resets) do
+                    if pcall(fn) then done[#done + 1] = name else failed[#failed + 1] = name end
+                end
+                table.sort(done) table.sort(failed)
+                return done, failed
+            end
+            K.reset_names = function()
+                local t = {}
+                for name in pairs(K.resets) do t[#t + 1] = name end
+                table.sort(t)
+                return t
+            end
+            -- ★ 全量扫描回调表：成员 mod 把自己的「兜底全内存搜索」挂进来，
+            --   本组的「全内存扫描」按钮会依次调用。
+            K.full_scans = {}
+            K.register_full_scan = function(name, fn)
+                if type(name) ~= 'string' or name == '' or type(fn) ~= 'function' then
+                    return false, 'register_full_scan(name, fn)'
+                end
+                K.full_scans[name] = fn
+                return true
+            end
+            K.run_full_scans = function()
+                local done, failed = {}, {}
+                for name, fn in pairs(K.full_scans) do
+                    if pcall(fn) then done[#done + 1] = name else failed[#failed + 1] = name end
+                end
+                table.sort(done) table.sort(failed)
+                return done, failed
+            end
+            K.full_scan_names = function()
+                local t = {}
+                for name in pairs(K.full_scans) do t[#t + 1] = name end
+                table.sort(t)
+                return t
+            end
             rawset(_G, 'HD2Scanner', K)      -- ★ 对外接口：其它 mod 从这里拿地址
             log('_G.HD2Scanner 已导出')
         end
@@ -259,7 +316,7 @@ end
 
 
 -- ---------------------------------------------------------------------------
--- 4.6 ModOptionsMenu（原生 MODS 页）—— 只注册 3 行：状态 / AOB / 诊断
+-- 4.6 ModOptionsMenu（原生 MODS 页）—— 注册 4 行：状态 / AOB / 全内存扫描 / 初始化
 --
 --   ⚠ MOM 只支持 toggle / choice / slider，**没有只读状态行**；但它的 label 与
 --     description 可以是**函数**，每次打开 ESC 菜单时重算（mod_options_menu API v2，
@@ -268,9 +325,10 @@ end
 --   ⚠ 注册后不能注销、不能改 kind；id 必须稳定，函数必须自己兜异常
 --     （MOM 侧会 pcall，但返回 nil/超长只会退回旧文本，注册期还会直接失败）。
 --   ⚠ 这里注册的就是 HD2Menu 那套页面的替代品（2026-10-04 退役，见文件头）。
+--   ⚠ 分组名统一走 MOM_GROUP（'A HD2 MOD COLLECTION'），本组是**所有 HD2 mod 共用**的。
 -- ---------------------------------------------------------------------------
 local MOM = { registered = false, prefix = 'hd2_scanner.' }
-local MOM_NAME = 'HD2 Scanner（前置）'
+local MOM_NAME = MOM_GROUP
 
 local function mom_tables()
     local n = 0
@@ -331,11 +389,11 @@ end
 local function mom_status_label()
     local ok, txt = pcall(function()
         local ks = K and K.status and K.status() or nil
-        return string.format('扫描状态：%s · 表 %d 张 · %s',
+        return string.format('[Scanner] 扫描状态：%s · 表 %d 张 · %s',
             ks and tostring(ks.state) or '未装载', mom_tables(),
             (AOB and AOB.base and AOB.base()) and 'AOB ok' or 'AOB --')
     end)
-    if not ok or type(txt) ~= 'string' or txt == '' then return '扫描状态（读取失败）' end
+    if not ok or type(txt) ~= 'string' or txt == '' then return '[Scanner] 扫描状态（读取失败）' end
     if #txt > 60 then txt = txt:sub(1, 60) end
     return txt
 end
@@ -346,6 +404,42 @@ local function mom_aob_text()
             .. '失败了会显示原因（AOB 不唯一 / 锚点找不到 / 表不可读），同时写进 HD2Scanner.log。'
     end)
     if not ok or type(txt) ~= 'string' or txt == '' then return 'AOB 状态读不出来' end
+    if #txt > 390 then txt = txt:sub(1, 390) end
+    return txt
+end
+
+-- 「全内存扫描」的 description（≤400 字符）：显示当前定位状态
+local function mom_full_text()
+    local ok, txt = pcall(function()
+        local ks = K and K.status and K.status() or nil
+        local head = ks and string.format('内核 %s · 第 %d 轮 · 表 %d 张',
+            tostring(ks.state), ks.rounds or 0, mom_tables()) or '内核 未装载'
+        local names = (K and K.full_scan_names and K.full_scan_names()) or {}
+        local body = (#names > 0)
+            and ('会依次调：' .. table.concat(names, ' / '))
+            or '当前没有 mod 注册兜底扫描'
+        return head .. '\n' .. mom_aob_line()
+            .. '\n\n兜底动作：强制内核**立刻**走一遍完整内存扫描（所有区段）+ 重新解析战备表。'
+            .. '\n' .. body
+            .. '\n正常不用点 —— 内核每 30 秒自己扫一轮，AOB 也会自动解析。'
+            .. '只有日志里出现「找不到表 / AOB 失败」时才用。'
+    end)
+    if not ok or type(txt) ~= 'string' or txt == '' then return '全内存扫描：状态读不出来' end
+    if #txt > 390 then txt = txt:sub(1, 390) end
+    return txt
+end
+
+-- 「初始化」的 description（≤400 字符）：列出已注册重置回调的 mod
+local function mom_reset_text()
+    local ok, txt = pcall(function()
+        local names = (K and K.reset_names and K.reset_names()) or {}
+        local body = (#names > 0)
+            and ('会依次还原：' .. table.concat(names, ' / '))
+            or '当前没有 mod 注册初始化（本组其它 mod 还没装）'
+        return '一键把**本组所有已装 mod** 写回原装 + 复位各自 cfg。\n'
+            .. body .. '\n\n⚠ 全局动作：装了几个就还原几个，不能只还原其中一个。'
+    end)
+    if not ok or type(txt) ~= 'string' or txt == '' then return '初始化：状态读不出来' end
     if #txt > 390 then txt = txt:sub(1, 390) end
     return txt
 end
@@ -385,7 +479,7 @@ local function register_mod_options()
     -- ② 解析战备表（AOB）
     local aob_id = MOM.prefix .. 'aob'
     add(aob_id, { type = 'toggle', mod = MOM_NAME, default = false,
-        label = '解析战备表（AOB）', description = mom_aob_text })
+        label = '[Scanner] 解析战备表（AOB）', description = mom_aob_text })
     on_change(aob_id, function(v)
         if not v then return end
         if AOB then
@@ -398,20 +492,39 @@ local function register_mod_options()
         unpress(aob_id)
     end)
 
-    -- ③ 写诊断到日志
-    local diag_id = MOM.prefix .. 'diag'
-    add(diag_id, { type = 'toggle', mod = MOM_NAME, default = false,
-        label = '写诊断到日志',
-        description = '把上面那段状态整块写进 HD2Scanner.log（排查用，点完自动弹回）。' })
-    on_change(diag_id, function(v)
+    -- ③ 全内存扫描（兜底）
+    local full_id = MOM.prefix .. 'full'
+    add(full_id, { type = 'toggle', mod = MOM_NAME, default = false,
+        label = '[Scanner] 全内存扫描（兜底）', description = mom_full_text })
+    on_change(full_id, function(v)
         if not v then return end
-        local ok2, txt = pcall(mom_status_text)
-        log('MOM 诊断：' .. tostring(txt):gsub('\n', ' | '))
-        log_flush(true)
-        unpress(diag_id)
+        local ok2 = pcall(function() if K and K.declare_need then K.declare_need() end end)
+        local aob = '未装载'
+        if AOB then
+            local a1 = pcall(AOB.request)
+            aob = a1 and '重新解析' or '失败'
+        end
+        local done, failed = {}, {}
+        if K and K.run_full_scans then done, failed = K.run_full_scans() end
+        log(string.format('MOM: 全内存扫描 -> 内核 urgent %s · AOB %s · 成员回调 %d 成功 / %d 失败',
+            ok2 and 'OK' or '失败', aob, #done, #failed))
+        unpress(full_id)
     end)
 
-    log('MOM: 已注册 3 行（扫描状态 / 解析战备表 / 写诊断）')
+    -- ④ 初始化（全局）
+    local reset_id = MOM.prefix .. 'reset'
+    add(reset_id, { type = 'toggle', mod = MOM_NAME, default = false,
+        label = '[Scanner] 初始化（全局）', description = mom_reset_text })
+    on_change(reset_id, function(v)
+        if not v then return end
+        local done, failed = {}, {}
+        if K and K.run_resets then done, failed = K.run_resets() end
+        log(string.format('MOM: 初始化 -> 成功 %d（%s）；失败 %d（%s）',
+            #done, table.concat(done, ','), #failed, table.concat(failed, ',')))
+        unpress(reset_id)
+    end)
+
+    log('MOM: 已注册 4 行（扫描状态 / 解析战备表 / 全内存扫描 / 初始化）· 组 ' .. MOM_NAME)
 end
 
 -- ---------------------------------------------------------------------------

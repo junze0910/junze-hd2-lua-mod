@@ -24,7 +24,7 @@
 --  红线：只写目标记录 +0 的 8 字节；其余 112 字节一字不动。
 -- ===========================================================================
 
-local VERSION = '1.0.1'
+local VERSION = '1.0.2'
 local MOD = 'mods/dsh/guard_dog_loadout'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, phase = 'starting', writes = 0, refusals = 0, errs = 0,
@@ -725,17 +725,39 @@ local function do_initialize()
     local mom = rawget(_G, 'ModOptionsMenu')
     if type(mom) == 'table' then
       pcall(function() mom.set('guard_dog_loadout.weapon', 1) end)
-      pcall(function() mom.set('guard_dog_loadout.reset', false) end)
     end
   end
   report('初始化：已强制写回原装，cfg 复位为 AR-23P（原装）', true)
 end
+-- ---------------------------------------------------------------- MOM 分组 + 全局初始化挂钩
+-- 组名统一由 Scanner 提供（`HD2Scanner.mom_group` = 'A HD2 MOD COLLECTION'）；
+-- 旧版 Scanner 没有该字段时用同名字符串兜底。
+local function mom_group()
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) == 'table' and type(S.mom_group) == 'string' and S.mom_group ~= '' then
+    return S.mom_group
+  end
+  return 'A HD2 MOD COLLECTION'
+end
+
+-- 本 mod 的「初始化」不再自己占一行，而是挂到 Scanner 的全局初始化注册表
+-- （Scanner 那个「初始化（全局）」按钮会依次调用；旧版 Scanner 没该 API 则退化为只能靠 cfg）。
+local RESET_HOOKED = false
+local function hook_reset()
+  if RESET_HOOKED then return end
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) ~= 'table' or type(S.register_reset) ~= 'function' then return end
+  local ok, res = pcall(S.register_reset, '护卫犬', do_initialize)
+  if ok and res then RESET_HOOKED = true end
+end
+
 -- ---------------------------------------------------------------- ModOptionsMenu 适配
 local function register_mod_options()
   if MOD_OPTIONS.registered then return end
   local mom = rawget(_G, 'ModOptionsMenu')
   if type(mom) ~= 'table' or mom.api ~= 1 then return end
   MOD_OPTIONS.registered = true
+  local MOM_GROUP = mom_group()
 
   local id = 'guard_dog_loadout.weapon'
   local function index_of(key)
@@ -745,7 +767,7 @@ local function register_mod_options()
   -- ★ 自定义哈希没有文本框（Scanner 面板是纯鼠标的），所以把 cfg 的**完整路径**
   --   写进 ModOptionsMenu 的描述页 —— 玩家选中这一项时，右边直接看得到该改哪个文件。
   --   （写法与机甲 mod 一致：description = '...' 是选项表里的一个字段）
-  mom.register_option(id, { type = 'choice', label = '下挂物品', mod = '护卫犬挂载自选',
+  mom.register_option(id, { type = 'choice', label = '[护卫犬] 下挂物品', mod = MOM_GROUP,
     choices = WEAPON_CHOICES, default = index_of(CFG.weapon),
     description = 'AR-23P = 原装（不改写）；MG-43 = SEAF。'
                .. '自定义 = 读 cfg 文件 ' .. tostring(CFG_FILE)
@@ -755,17 +777,7 @@ local function register_mod_options()
     if name then set_weapon(name) end
   end)
 
-  local rid = 'guard_dog_loadout.reset'
-  mom.register_option(rid, { type = 'toggle', label = '初始化（写回原装 + cfg 复位）',
-    mod = '护卫犬挂载自选', default = false })
-  mom.on_change(rid, function(v)
-    if not v then return end
-    do_initialize()
-    mom.set(id, index_of(CFG.weapon))
-    mom.set(rid, false)
-  end)
-
-  report('ModOptionsMenu: 护卫犬挂载自选已注册到原生 MODS 页', true)
+  report(('ModOptionsMenu: 已注册到「%s」（1 行；初始化改成 Scanner 的全局按钮）'):format(MOM_GROUP), true)
 end
 
 -- ---------------------------------------------------------------- 挂载
@@ -781,6 +793,11 @@ if type(prev_update) == 'function' then
     if not ok3 then
       state.errs = state.errs + 1
       if state.errs <= 5 then report('ModOptionsMenu error: ' .. tostring(err3)) end
+    end
+    local ok4, err4 = pcall(hook_reset)
+    if not ok4 then
+      state.errs = state.errs + 1
+      if state.errs <= 5 then report('Scanner 全局初始化挂钩 error: ' .. tostring(err4)) end
     end
     return prev_update(...)
   end

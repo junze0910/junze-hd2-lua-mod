@@ -23,7 +23,7 @@
 --  红线：所有写入 = 预检 → 改页保护 → 写 → 回读 → 失败写回原值
 -- ===========================================================================
 
-local VERSION = '0.1e'
+local VERSION = '0.1f'
 local MOD = 'mods/dsh/custom_supply'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, status = 'starting', writes = 0, errs = 0, applied = false })
@@ -135,6 +135,7 @@ end
 local CFG_SEL = { IDX.none, IDX.none, IDX.none, IDX.none }   -- mod 默认状态 = 四槽全无 → CD 30 s
 local CFG_ARTY = false                                      -- SEAF 大炮覆盖：默认关
 local CFG_ARTY_SEL = { 1, 1, 1, 1 }                         -- 1 = 补给类
+state.CFG, state.CFG_SEL, state.CFG_ARTY_SEL = CFG, CFG_SEL, CFG_ARTY_SEL   -- 抈具 / 调试用（按引用共享）
 -- 参考：保留原装内容（医疗包 ×4）时 CD = 90 s
 local function load_cfg()
   local f = io and io.open('CustomSupply.cfg', 'r')
@@ -479,41 +480,54 @@ local function locate_rack()
 end
 
 -- ============================================================ 计算 + 应用
-local function sel_from_mom()
-  local sel = {}
+local MODE_CHOICES = { '补给（4 槽 = 补给内容）', '大炮覆盖（4 槽 = SEAF 炮弹）' }
+
+-- 当前是不是「大炮覆盖」模式（MOM 的「模式」行选第 2 项）
+local function mode_arty()
   local mom = rawget(_G, 'ModOptionsMenu')
-  for i = 1, SLOTS do
-    local v
-    if mom and mom.get then
-      local ok, got = pcall(mom.get, 'custom_supply.slot' .. i)
-      if ok then v = tonumber(got) end
+  if mom and mom.get then
+    local ok, got = pcall(mom.get, 'custom_supply.mode')
+    if ok then
+      local n = tonumber(got)
+      if n then return n == 2 end
     end
+  end
+  return CFG_ARTY == true
+end
+local arty_enabled = mode_arty          -- 旧名字，下面还在用
+
+-- MOM「槽位 i」当前值（拿不到就返回 nil）
+local function slot_row(i)
+  local mom = rawget(_G, 'ModOptionsMenu')
+  if mom and mom.get then
+    local ok, got = pcall(mom.get, 'custom_supply.slot' .. i)
+    if ok then return tonumber(got) end
+  end
+  return nil
+end
+
+-- 上层补给选择（1..#ITEMS）：只有补给模式下那 4 行才代表它
+local function sel_from_mom()
+  local arty = mode_arty()
+  local sel = {}
+  for i = 1, SLOTS do
+    local v = (not arty) and slot_row(i) or nil
     sel[i] = v or CFG_SEL[i] or 1
     if sel[i] < 1 or sel[i] > #ITEMS then sel[i] = 1 end
+    if not arty then CFG_SEL[i] = sel[i] end     -- ★ 补给模式下 MOM 权威 → 记回 cfg
   end
   return sel
 end
 
-local function arty_enabled()
-  local mom = rawget(_G, 'ModOptionsMenu')
-  if mom and mom.get then
-    local ok, got = pcall(mom.get, 'custom_supply.seaf_arty')
-    if ok then return got == true or got == 1 or got == '1' or got == 'on' end
-  end
-  return CFG_ARTY == true
-end
-
+-- 下层大炮选择（1..#ARTY_ITEMS）：只有大炮模式下那 4 行才代表它
 local function arty_sel_from_mom()
+  local arty = mode_arty()
   local sel = {}
-  local mom = rawget(_G, 'ModOptionsMenu')
   for i = 1, SLOTS do
-    local v
-    if mom and mom.get then
-      local ok, got = pcall(mom.get, 'custom_supply.arty' .. i)
-      if ok then v = tonumber(got) end
-    end
+    local v = arty and slot_row(i) or nil
     sel[i] = v or CFG_ARTY_SEL[i] or 1
     if sel[i] < 1 or sel[i] > #ARTY_ITEMS then sel[i] = 1 end
+    if arty then CFG_ARTY_SEL[i] = sel[i] end    -- ★ 大炮模式下 MOM 权威 → 记回 cfg
   end
   return sel
 end
@@ -666,77 +680,113 @@ end
 
 -- ============================================================ MOM 注册
 local MOMDONE = false
+local MOMDONE = false
+
+-- 组名统一由 Scanner 提供（`HD2Scanner.mom_group` = 'A HD2 MOD COLLECTION'）
+local function mom_group()
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) == 'table' and type(S.mom_group) == 'string' and S.mom_group ~= '' then
+    return S.mom_group
+  end
+  return 'A HD2 MOD COLLECTION'
+end
+
+-- 两种模式共用同一条槽位下拉：项数按较长的（大炮 8 项）注册，
+-- 文字用**函数**（MOM 每次开菜单都会重算）⇒ 切模式后下拉内容直接换。
+local SLOT_N = math.max(#ITEMS, #ARTY_ITEMS)
+local function slot_choice_text(idx)
+  return function()
+    if mode_arty() then
+      local e = ARTY_ITEMS[idx]
+      return (e and e.name) or '—'
+    end
+    local e = ITEMS[idx]
+    return (e and e.name) or '无'
+  end
+end
+
+-- 切模式后，把 4 行拨成新模式各自记住的选择
+local function refresh_slot_rows()
+  local mom = rawget(_G, 'ModOptionsMenu')
+  if not (mom and mom.set) then return end
+  local arty = mode_arty()
+  for i = 1, SLOTS do
+    local v = arty and (CFG_ARTY_SEL[i] or 1) or (CFG_SEL[i] or 1)
+    pcall(mom.set, 'custom_supply.slot' .. i, v)
+  end
+end
+state.refresh_slot_rows = refresh_slot_rows
+
 local function register_mom()
   if MOMDONE then return end
   local mom = rawget(_G, 'ModOptionsMenu')
   if type(mom) ~= 'table' or type(mom.register_option) ~= 'function' then return end
   MOMDONE = true
+  local MOM_GROUP = mom_group()
+
+  -- ① 模式：补给 / 大炮覆盖（2026-10-04 取代原来的 seaf_arty 开关）
+  mom.register_option('custom_supply.mode', {
+    type = 'choice', label = '[补给] 模式', mod = MOM_GROUP,
+    choices = MODE_CHOICES, default = CFG_ARTY and 2 or 1,
+    description = function()
+      if mode_arty() then
+        return '大炮覆盖：下面 4 个槽位 = SEAF 炮弹（选「补给类」则回退上层补给内容）。\n' .. status_text()
+      end
+      return '补给：下面 4 个槽位 = 补给包架内容（放什么给什么，放多少决定冷却）。\n' .. status_text()
+    end,
+  })
+  if mom.on_change then
+    mom.on_change('custom_supply.mode', function(v)
+      local ok, err = pcall(function()
+        CFG_ARTY = (tonumber(v) == 2)
+        refresh_slot_rows()
+        report(('模式 -> %s（槽位下拉已切成该模式的选项）'):format(
+          CFG_ARTY and '大炮覆盖' or '补给'), true)
+        state.applied = false
+      end)
+      if not ok then state.errs = state.errs + 1 report('on_change 异常: ' .. tostring(err), true) end
+    end)
+  end
+
+  -- ② 槽位 1..4（同一条下拉，选项随模式变）
   local choices = {}
-  for i, e in ipairs(ITEMS) do choices[i] = e.name end
+  for k = 1, SLOT_N do choices[k] = slot_choice_text(k) end
   for i = 1, SLOTS do
     local id = 'custom_supply.slot' .. i
     mom.register_option(id, {
-      type = 'choice', label = ('补给槽位 %d'):format(i), mod = '自定义补给',
-      choices = choices, default = CFG_SEL[i] or IDX.none,
-      description = function() return status_text() end,
+      type = 'choice', label = '[补给] 槽位 %d', mod = MOM_GROUP,
+      choices = choices,
+      default = CFG_ARTY and (CFG_ARTY_SEL[i] or 1) or (CFG_SEL[i] or IDX.none),
+      description = function()
+        if mode_arty() then
+          return '大炮模式：可选 6 种炮弹 / 爆炸筒；选「补给类」则沿用上层同槽的补给内容。\n' .. status_text()
+        end
+        return '补给模式：无 / 弹药盒 / 针剂盒 / 手雷盒 / 补给包 / 医疗包 / 爆炸筒。\n' .. status_text()
+      end,
     })
     if mom.on_change then
       mom.on_change(id, function(v)
         local ok, err = pcall(function()
-          local sel = sel_from_mom()
-          sel[i] = tonumber(v) or sel[i]
-          report(('槽位 %d 改为 %s → 重算 CD = %d s'):format(i, ITEMS[sel[i]].name, compute_cd(sel)), true)
+          local n = tonumber(v) or 0
+          local arty = mode_arty()
+          if arty then
+            if n >= 1 and n <= #ARTY_ITEMS then CFG_ARTY_SEL[i] = n end
+          else
+            if n >= 1 and n <= #ITEMS then CFG_SEL[i] = n end
+          end
+          local eff = effective_items()
+          report(('%s %d 改为 %s → 重算 CD = %d s'):format(
+            arty and '大炮槽位' or '补给槽位', i,
+            (arty and ARTY_ITEMS[CFG_ARTY_SEL[i]] or ITEMS[CFG_SEL[i]]).name,
+            compute_cd(eff)), true)
           state.applied = false                -- 下一帧重新应用
         end)
         if not ok then state.errs = state.errs + 1 report('on_change 异常: ' .. tostring(err), true) end
       end)
     end
   end
-  -- SEAF 大炮覆盖：手动开关 + 4 个独立槽位
-  local arty_choices = {}
-  for i, e in ipairs(ARTY_ITEMS) do arty_choices[i] = e.name end
-  mom.register_option('custom_supply.seaf_arty', {
-    type = 'toggle', label = 'SEAF 大炮覆盖（仅当存在超级地球大炮时可用）', mod = '自定义补给',
-    default = CFG_ARTY and true or false,
-    description = function()
-      if not arty_enabled() then
-        return '未启用：只读取上面四个补给槽位（仅当场上存在超级地球大炮/SEAF Artillery 时使用）'
-      end
-      return '已启用：下面四个槽位生效；下层=补给类时沿用上层对应补给 ｜ ' .. status_text()
-    end,
-  })
-  if mom.on_change then
-    mom.on_change('custom_supply.seaf_arty', function(v)
-      local ok, err = pcall(function()
-        report(('SEAF 大炮覆盖：%s'):format(v and '开' or '关'), true)
-        state.applied = false
-      end)
-      if not ok then state.errs = state.errs + 1 report('on_change 异常: ' .. tostring(err), true) end
-    end)
-  end
-  for i = 1, SLOTS do
-    local id = 'custom_supply.arty' .. i
-    mom.register_option(id, {
-      type = 'choice', label = ('大炮槽位 %d'):format(i), mod = '自定义补给',
-      choices = arty_choices, default = CFG_ARTY_SEL[i] or 1,
-      description = function()
-        if not arty_enabled() then return '未启用（只读上面四个补给槽位）' end
-        return status_text()
-      end,
-    })
-    if mom.on_change then
-      mom.on_change(id, function(v)
-        local ok, err = pcall(function()
-          local sel = arty_sel_from_mom()
-          sel[i] = tonumber(v) or sel[i]
-          report(('大炮槽位 %d 改为 %s'):format(i, ARTY_ITEMS[sel[i]].name), true)
-          state.applied = false
-        end)
-        if not ok then state.errs = state.errs + 1 report('on_change 异常: ' .. tostring(err), true) end
-      end)
-    end
-  end
-  report('已注册 ModOptionsMenu：4 个补给槽位 + SEAF 大炮覆盖（1 开关 + 4 槽位）', true)
+
+  report(('已注册 ModOptionsMenu：已并入「%s」——模式 1 行 + 槽位 4 行（共 5 行）'):format(MOM_GROUP), true)
 end
 
 -- ============================================================ 帧
