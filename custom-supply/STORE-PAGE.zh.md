@@ -104,6 +104,7 @@
 | 组件 | 版本 |
 |---|---|
 | Bingus Shared Loader | v15+（API 1） |
+| Mod Options Menu | **v1.1+**（设置 UI 前置） |
 | HD2 Scanner | **v0.8.0+**（必需） |
 | 游戏构建 | `helldivers2.exe` 1.8.46015.0（Steam build 25480438） |
 

@@ -96,6 +96,7 @@ Writes only live in the current game process; restart the game and everything is
 | Component | Version |
 |---|---|
 | Bingus Shared Loader | v15+ (API 1) |
+| Mod Options Menu | **v1.1+** (settings UI prerequisite) |
 | HD2 Scanner | **v0.8.0+** (required) |
 | Game build | `helldivers2.exe` 1.8.46015.0 (Steam build 25480438) |
 

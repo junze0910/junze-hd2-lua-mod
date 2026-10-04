@@ -16,7 +16,7 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 | **Guard Dog Loadout** | — | Guard dog's mounted weapon: **3-way selectable** (vanilla AR-23P / SEAF MG-43 / custom hash) — replaces *Stronger Kinetic Guard Dog* |
 | **TD-110 Loadout** | — | TD-110 mount slots: **4 modes** (vanilla / co-op / busy / custom) + an independent **360° yaw** toggle — replaces *TD-110 Co-Op* and *Busier TD-110 Driver* |
 | **EXO Loadout** | — | EXO stratagem + arm loadout, fully configurable — replaces the two *More Balanced Exosuit* builds (no more "pick one") |
-| **Custom Supply** | **Logistics** | Turns the supply rack's **4 slots** into a loadout: what you put in decides **what the supply drops**, how much you put in decides **the cooldown** (30 s empty → 150 s full). Four independent dropdowns in the game's native MODS page. **Requires Scanner v0.8.0+** |
+| **Custom Supply** | **Logistics** | Turns the supply rack's **4 slots** into a loadout: what you put in decides **what the supply drops**, how much you put in decides **the cooldown** (30 s empty → 150 s full). Four independent dropdowns in the game's native MODS page. **Requires Mod Options Menu v1.1+ and Scanner v0.8.0+** |
 | **Unlock Kit** | **Logistics** | Adds a per-target **on/off switch** to the game's native MODS page — **2 weapons** (clone a same-class template, identity fields only) + **6 stratagems** (`+0x80 bit1` + record `+0x14=2`) + a read-only recon row. **Explicit whitelist — no 'unlock everything'**; no attachment unlocks. HD2 Scanner optional. |
 
 Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-mod/tree/main/dist) (prebuilt zip) · source code in each subfolder.
@@ -45,7 +45,7 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 | **Guard Dog Loadout** | **护卫犬挂载自选** | **单兵** | 护卫犬挂载武器**三选一**（原装 AR-23P / SEAF MG-43 / 自定义哈希）—— 取代「更强的实弹狗」 |
 | **TD-110 Loadout** | **TD-110 挂载切换** | **载具** | TD-110 两个挂载位**四档模式**（原装 / 合作 / 忙碌 / 自定义）+ 射界 360° 独立开关 —— 取代 `TD-110 Co-Op` 与「更忙的驾驶员」 |
 | **EXO Loadout** | **EXO 战备自选** | **载具** | 携带机体四选一 + 附加机体三选一 + 手臂跨机体互换（只在携带两台间）—— 取代外骨骼两版，**不再需要二选一** |
-| **Custom Supply** | **自定义补给** | **后勤** | 补给包架**四个槽位独立选择**（无 / 弹药盒 / 针剂盒 / 手雷盒 / 补给包 / 医疗包 / 爆炸筒）—— **放什么决定补给给什么，放多少决定冷却多久**（30 s ~ 150 s）；**v0.1e（已实机通过，已发布）**新增 **SEAF 大炮覆盖**（仅当存在超级地球大炮时手动开启，下层 4 槽可选 6 种炮弹 / 爆炸筒，选「补给类」回退上层）；**需 Scanner v0.8.0+** |
+| **Custom Supply** | **自定义补给** | **后勤** | 补给包架**四个槽位独立选择**（无 / 弹药盒 / 针剂盒 / 手雷盒 / 补给包 / 医疗包 / 爆炸筒）—— **放什么决定补给给什么，放多少决定冷却多久**（30 s ~ 150 s）；**v0.1e（已实机通过，已发布）**新增 **SEAF 大炮覆盖**（仅当存在超级地球大炮时手动开启，下层 4 槽可选 6 种炮弹 / 爆炸筒，选「补给类」回退上层）；**需 Mod Options Menu v1.1+ 与 Scanner v0.8.0+** |
 | **Unlock Kit** | **解锁台** | **后勤** | 把「解锁指定条目」做成 **MODS 页一行一个是/否开关**：武器 2 把（克隆同类样板，只换身份字段）＋ 战备 6 条（② 选择位 + ③ 记录状态）＋ 只读侦察。**只做指定条目，不做「全解锁」**；**不含配件解锁** |
 
 > **分类（Tags）与发布线**：`优化`（Optimization）只有 **No Large Piercing** 两版；本次起另按**发布线**打 tag —— **前置** `core-v2.0`（HD2 Scanner）、**单兵** `infantry-v2.0`（AC-8 / 实弹狗 / 护卫犬自选）、**载具** `vehicle-v2.0`（TD-110 挂载 / EXO 自选）、**后勤** `logistics-v0.1alpha`（**自定义补给**；**解锁台**同属后勤线，包见 `dist/`）。
@@ -61,6 +61,7 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 ## 依赖
 
 * **Bingus Shared Loader v15 或更高**（loader 日志首行为 `Bingus Shared Loader loader-v1x; API 1`；本次验证环境为 **v17**）
+* **Mod Options Menu v1.1+** —— 提供游戏原生 MODS 设置页（本 mod 的配置界面）
 * **HD2 Scanner**（发布线 `core-v2.0`）—— 上表标「需 Scanner」的 mod 必须**与它同时启用**；缺前置时这些 mod 不工作，只在日志里写明原因（不会乱写内存）
 * 一个能导入 zip 的 HD2 mod 管理器（HD2MM / Arsenal 等）
 
@@ -76,7 +77,7 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
    | `GuardDogLoadout-v1.0.1.zip` | 护卫犬挂载武器自选（**需 Scanner**；与「更强的实弹狗」二选一；替换 v1.0） |
    | `TD-110-Loadout-v1.0.1.zip` | TD-110 挂载四档 + 射界 360°（**需 Scanner**；取代下面两个 TD-110 包） |
    | `ExoLoadout-v0.8.0.zip` | EXO 战备 + 手臂自选（**需 Scanner v0.8.0+**；附加战备由 AOB 直取、自动写入，取代 v0.7.2） |
-| `Custom-Supply-v0.1e.zip` | **自定义补给 v0.1e** —— 上层补给内容 + 冷却自定义 + **SEAF 大炮覆盖**（**需 Scanner v0.8.0+**；MODS 页上层 4 槽 / 开关 / 下层 4 槽，下拉描述实时显示冷却） |
+| `Custom-Supply-v0.1e.zip` | **自定义补给 v0.1e** —— 上层补给内容 + 冷却自定义 + **SEAF 大炮覆盖**（**需 Mod Options Menu v1.1+ 与 Scanner v0.8.0+**；MODS 页上层 4 槽 / 开关 / 下层 4 槽，下拉描述实时显示冷却） |
    | `Unlock-Kit-v0.6.zip` | **解锁台** —— 一行一个「解锁 X」开关：武器 P-41 / G-11 + 战备 6 条（ID5/26/105/135/146/50）+ 只读侦察；**不需要 Scanner**（检测到则优先用它的战备表 API） |
    | `TD-110-Co-Op-v1.1.zip` | 更强调合作的 TD-110（**已废弃**，见旧线 `v1.2.1`；`dist/` 已下架） |
    | `TD-110-Busier-Driver-v1.2.zip` | 更忙的 TD-110 驾驶员（**已废弃**，与上一个**二选一**；`dist/` 已下架） |

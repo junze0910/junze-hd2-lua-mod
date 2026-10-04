@@ -1,6 +1,6 @@
 # 自定义补给（Custom Supply）v0.1e
 
-**前置：** Bingus Shared Loader v15+ ｜ **HD2 Scanner v0.8.0+（必需）**
+**前置：** Bingus Shared Loader v15+ ｜ **Mod Options Menu v1.1+** ｜ **HD2 Scanner v0.8.0+（必需）**
 
 ## 简介
 
@@ -36,7 +36,7 @@
 
 ## 安装
 
-1. 先安装并启用 **HD2 Scanner v0.8.0+**
+1. 先安装并启用 **Mod Options Menu v1.1+** 与 **HD2 Scanner v0.8.0+**
 2. 用 mod 管理器导入 `Custom-Supply-v0.1e.zip` 并启用
 3. 启动游戏，**进一次任务**（数据表在任务里加载）
 

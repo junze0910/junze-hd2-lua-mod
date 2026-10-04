@@ -23,7 +23,7 @@
 
 **日期**：2026-10-04 ｜ **包**：`build/Custom-Supply-v0.1e.zip`（11,705 B）
 **SHA-256**：`E0CF9E40E2577EA097EDFD76EB46EB7830B986562EF38F6D94EDDA0D90015756`
-**前置**：**HD2-Scanner-v0.8.0.zip**（硬前置）｜ **状态**：已实机通过（用户确认 2026-10-04），**已发布**（`logistics-v0.1alpha`）
+**前置**：**Mod Options Menu v1.1+** + **HD2-Scanner-v0.8.0.zip**（硬前置），需 Bingus Shared Loader v15+ ｜ **状态**：已实机通过（用户确认 2026-10-04），**已发布**（`logistics-v0.1alpha`）
 
 在 v0.1d（「爆炸筒」，已实机通过）基础上新增：
 
