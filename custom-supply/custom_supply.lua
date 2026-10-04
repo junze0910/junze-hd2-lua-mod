@@ -1,11 +1,15 @@
 -- HD2-Addon: mods/dsh/custom_supply
 
 -- ===========================================================================
---  自定义补给 v0.1a（CUSTOM-SUPPLY）
+--  自定义补给 v0.1e（CUSTOM-SUPPLY）
 --
---  机制：补给包架 4 个槽位各填一件（6 选 1），内容决定冷却：
+--  机制：补给包架 4 个槽位各填一件（7 选 1），内容决定冷却：
 --     CD = 30 + 5·弹药盒 + 30·治疗针剂 + 15·手榴弹包 + 30·补给(模型) + 15·医疗补给(模型)
+--          + 0·爆炸筒
 --     4 槽全「无」→ 30 s；区间 30 ~ 150 s
+--  额外：SEAF 大炮覆盖（手动开关）——开启后下层 4 槽生效：
+--     下层=补给类 → 沿用上层对应补给；否则用下层选中的炮弹/爆炸筒；上下层独立配置。
+--     炮弹 CD：迷你核弹 +30 / 高爆弹 +20 / 炸弹 +15 / 凝固汽油弹 +10 / 静电场 +10 / 烟雾弹 +5 / 爆炸筒 +0
 --
 --  写入三处（都要等进任务、表加载之后；内存写是会话级，每局重写）：
 --     ① 包架记录 HellpodRackComponent（ID77 用的 health_pack_rack）的 4 个激活槽：
@@ -19,7 +23,7 @@
 --  红线：所有写入 = 预检 → 改页保护 → 写 → 回读 → 失败写回原值
 -- ===========================================================================
 
-local VERSION = '0.1b'
+local VERSION = '0.1e'
 local MOD = 'mods/dsh/custom_supply'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, status = 'starting', writes = 0, errs = 0, applied = false })
@@ -32,7 +36,7 @@ local function hex_le(hex)                       -- "3B8D16C646A729A8" -> 小端
   return table.concat(out)
 end
 
-local ITEMS = {                                  -- 顺序 = MOM 下拉顺序（索引 1..6）
+local ITEMS = {                                  -- 顺序 = MOM 下拉顺序（索引 1..7）
   -- name = 简称（MOM 下拉 / 日志用）；full = 官方长名（文档 / 对照用）
   { key = 'none',    name = '无',      full = '无',                hex = nil,                cd = 0  },
   { key = 'ammo',    name = '弹药盒',  full = '资源点弹药盒',       hex = '79CCFFD281E3F3A9', cd = 5  },
@@ -40,6 +44,7 @@ local ITEMS = {                                  -- 顺序 = MOM 下拉顺序（
   { key = 'grenade', name = '手雷盒',  full = '资源点手榴弹包',     hex = '97AF34FBF093409C', cd = 15 },
   { key = 'cache',   name = '补给包',  full = '补给（模型）',       hex = 'A94913CA014F7579', cd = 30 },
   { key = 'medical', name = '医疗包',  full = '医疗补给（模型）',   hex = '3B8D16C646A729A8', cd = 15 },
+  { key = 'barrel', name = '爆炸筒', full = '爆炸筒（Explosive Barrel）', hex = 'ADD299F56916AE1F', cd = 0 },
 }
 for _, e in ipairs(ITEMS) do
   e.hash_le = e.hex and hex_le(e.hex) or nil
@@ -48,23 +53,49 @@ end
 local IDX = {}
 for i, e in ipairs(ITEMS) do IDX[e.key] = i end
 
--- 规范值（预设）：只有这两件有手调值；其余 = 原装（全 0）
+-- SEAF 大炮覆盖层：下层 4 槽的选项（第 1 项 = 补给类，沿用上层对应槽）
+local ARTY_ITEMS = {
+  { key = 'supply',        name = '补给类',        full = '补给类',                    supply = true, cd = 0  },
+  { key = 'arty_mininuke', name = '大炮 迷你核弹', full = 'Mini Nuke (SEAF)',          hex = 'E09FCB5A280ACB1D', cd = 30 },
+  { key = 'arty_highyield',name = '大炮 高爆弹',   full = 'High-Yield Explosive (SEAF)', hex = '6B7EE87FB2EC6455', cd = 20 },
+  { key = 'arty_explosive',name = '大炮 炸弹',     full = 'Explosive (SEAF)',           hex = 'DC19126D15692D04', cd = 15 },
+  { key = 'arty_napalm',   name = '大炮 凝固汽油弹',full = 'Napalm (SEAF)',             hex = 'E4BE3FDF0C857B7F', cd = 10 },
+  { key = 'arty_static',   name = '大炮 静电场',   full = 'Static Field (SEAF)',        hex = 'C02C2623B6359BB3', cd = 10 },
+  { key = 'arty_smoke',    name = '大炮 烟雾弹',   full = 'Smoke (SEAF)',               hex = 'F598598C47617605', cd = 5  },
+  { key = 'arty_barrel',   name = '爆炸筒',        full = '爆炸筒（Explosive Barrel）', hex = 'ADD299F56916AE1F', cd = 0  },
+}
+for _, e in ipairs(ARTY_ITEMS) do
+  e.hash_le = e.hex and hex_le(e.hex) or nil
+  e.none = (e.hex == nil)
+  e.off = { 0.0, 0.0, 0.0 }
+  e.rot = { 0.0, 0.0, 0.0 }
+end
+local ARTY_IDX = {}
+for i, e in ipairs(ARTY_ITEMS) do ARTY_IDX[e.key] = i end
+
+-- 规范值（预设）：只有下列物品有手调值；其余 = 原装（全 0）
 local PRESET = {
   stim    = { off = { 0.0, -0.1, -0.1 }, rot = { -90.0, 0.0, 0.0 } },
   grenade = { off = { 0.1, -0.3,  0.0 }, rot = { -90.0, 0.0, 0.0 } },
+  barrel    = { off = { 0.0, 0.0, 0.0 }, rot = { 0.0, 0.0, 0.0 } },
 }
 local CD_BASE = 30
 local SLOTS = 4
-local function compute_cd(sel)                   -- sel = { 物品索引×4 }
+local function as_item(x)                        -- 索引或物品记录
+  if type(x) == 'table' then return x end
+  return ITEMS[tonumber(x) or 1] or ITEMS[1]
+end
+local function compute_cd(sel)                   -- sel = { 物品索引 / 物品记录 ×4 }
   local cd, detail = CD_BASE, {}
   for i = 1, SLOTS do
-    local e = ITEMS[tonumber(sel[i]) or 1] or ITEMS[1]
-    cd = cd + e.cd
+    local e = as_item(sel[i])
+    cd = cd + (e.cd or 0)
     if not e.none then detail[#detail + 1] = e.name end
   end
   return cd, detail
 end
 state.ITEMS, state.PRESET, state.compute_cd, state.hex_le, state.IDX = ITEMS, PRESET, compute_cd, hex_le, IDX
+state.ARTY_ITEMS, state.ARTY_IDX = ARTY_ITEMS, ARTY_IDX
 state.CD_BASE, state.SLOTS = CD_BASE, SLOTS
 state.VERSION = VERSION
 
@@ -102,6 +133,8 @@ end
 
 -- ============================================================ 配置（MOM 优先，cfg 兜底）
 local CFG_SEL = { IDX.none, IDX.none, IDX.none, IDX.none }   -- mod 默认状态 = 四槽全无 → CD 30 s
+local CFG_ARTY = false                                      -- SEAF 大炮覆盖：默认关
+local CFG_ARTY_SEL = { 1, 1, 1, 1 }                         -- 1 = 补给类
 -- 参考：保留原装内容（医疗包 ×4）时 CD = 90 s
 local function load_cfg()
   local f = io and io.open('CustomSupply.cfg', 'r')
@@ -111,9 +144,19 @@ local function load_cfg()
     local key = text:match('slot' .. i .. '%s*=%s*([%a_]+)')
     if key and IDX[key] then CFG_SEL[i] = IDX[key] end
   end
-  report(('cfg：slot1..4 = %s'):format((function()
-    local t = {} for i = 1, SLOTS do t[i] = ITEMS[CFG_SEL[i]].name end return table.concat(t, ' / ')
-  end)()), true)
+  local seaf = text:match('seaf%s*=%s*([%a]+)')
+  if seaf then CFG_ARTY = (seaf == 'on' or seaf == 'true' or seaf == '1') end
+  for i = 1, SLOTS do
+    local key = text:match('arty' .. i .. '%s*=%s*([%a_]+)')
+    if key and ARTY_IDX[key] then CFG_ARTY_SEL[i] = ARTY_IDX[key] end
+  end
+  report(('cfg：slot1..4 = %s ｜ seaf=%s ｜ arty1..4 = %s'):format(
+    (function()
+      local t = {} for i = 1, SLOTS do t[i] = ITEMS[CFG_SEL[i]].name end return table.concat(t, ' / ')
+    end)(), CFG_ARTY and 'on' or 'off',
+    (function()
+      local t = {} for i = 1, SLOTS do t[i] = ARTY_ITEMS[CFG_ARTY_SEL[i]].name end return table.concat(t, ' / ')
+    end)()), true)
 end
 
 -- ============================================================ ffi / kernel32
@@ -451,12 +494,67 @@ local function sel_from_mom()
   return sel
 end
 
+local function arty_enabled()
+  local mom = rawget(_G, 'ModOptionsMenu')
+  if mom and mom.get then
+    local ok, got = pcall(mom.get, 'custom_supply.seaf_arty')
+    if ok then return got == true or got == 1 or got == '1' or got == 'on' end
+  end
+  return CFG_ARTY == true
+end
+
+local function arty_sel_from_mom()
+  local sel = {}
+  local mom = rawget(_G, 'ModOptionsMenu')
+  for i = 1, SLOTS do
+    local v
+    if mom and mom.get then
+      local ok, got = pcall(mom.get, 'custom_supply.arty' .. i)
+      if ok then v = tonumber(got) end
+    end
+    sel[i] = v or CFG_ARTY_SEL[i] or 1
+    if sel[i] < 1 or sel[i] > #ARTY_ITEMS then sel[i] = 1 end
+  end
+  return sel
+end
+
+local function effective_items()
+  local upper_sel = sel_from_mom()
+  local upper = {}
+  for i = 1, SLOTS do upper[i] = ITEMS[upper_sel[i]] or ITEMS[1] end
+  if not arty_enabled() then return upper, 'supply', upper_sel end
+  local lower_sel = arty_sel_from_mom()
+  local eff = {}
+  for i = 1, SLOTS do
+    local a = ARTY_ITEMS[lower_sel[i]]
+    if a and a.supply then eff[i] = upper[i] else eff[i] = a or upper[i] end
+  end
+  return eff, 'arty', upper_sel, lower_sel
+end
+
+local function item_preset(e)
+  if e.off and e.rot then return e.off, e.rot end
+  local p = PRESET[e.key]
+  if p then return p.off, p.rot end
+  return { 0.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0 }
+end
+
+local function status_text()
+  local eff, mode = effective_items()
+  local cd = compute_cd(eff)
+  local t = {}
+  for i = 1, SLOTS do t[i] = eff[i].name end
+  return ('当前 CD = %d s（%s：%s）'):format(cd, mode == 'arty' and 'SEAF 覆盖' or '补给', table.concat(t, ' / '))
+end
+state.effective_items, state.arty_enabled, state.arty_sel_from_mom = effective_items, arty_enabled, arty_sel_from_mom
+
 local function apply_all()
-  local sel = sel_from_mom()
-  local cd, detail = compute_cd(sel)
-  report(('配置：%s → CD = %d s'):format((function()
-    local t = {} for i = 1, SLOTS do t[i] = ITEMS[sel[i]].name end return table.concat(t, ' / ')
-  end)(), cd), true)
+  local eff, mode = effective_items()
+  local cd = compute_cd(eff)
+  report(('配置%s：%s → CD = %d s'):format(
+    mode == 'arty' and '（SEAF 覆盖）' or '', (function()
+      local t = {} for i = 1, SLOTS do t[i] = eff[i].name end return table.concat(t, ' / ')
+    end)(), cd), true)
 
   local ptr, si = strat_info(ID_TARGET)
   if not ptr then report('战备记录定位失败：' .. tostring(si), true) return false end
@@ -489,7 +587,7 @@ local function apply_all()
   local rack, whyr = locate_rack()
   if not rack then report('包架定位失败：' .. tostring(whyr), true) return false end
   for i = 1, SLOTS do
-    local e = ITEMS[sel[i]]
+    local e = eff[i]
     local addr = rack + (i - 1) * RACK_SLOT
     if e.none then
       local ok, why4 = write_bytes(addr + SL_ITEM, string.rep('\0', 8), 'item0')
@@ -498,9 +596,7 @@ local function apply_all()
     else
       local ok, why4 = write_bytes(addr + SL_ITEM, e.hash_le, 'item')
       if not ok then report(('槽%d item 写入失败：%s'):format(i, tostring(why4)), true) return false end
-      local p = PRESET[e.key]
-      local off = p and p.off or { 0, 0, 0 }
-      local rot = p and p.rot or { 0, 0, 0 }
+      local off, rot = item_preset(e)
       local ok2 = write_bytes(addr + SL_OFF, le_f32(off[1]) .. le_f32(off[2]) .. le_f32(off[3]), 'offset')
       local ok3 = write_bytes(addr + SL_ROT, le_f32(rot[1]) .. le_f32(rot[2]) .. le_f32(rot[3]), 'rot')
       report(('★ 槽%d = %s  offset=(%g,%g,%g) rot=(%g,%g,%g)  [%s/%s]'):format(
@@ -544,15 +640,15 @@ local function verify()
   end
 
   -- ② 冷却 + 包架 4 槽
-  local sel = sel_from_mom()
-  local cd = compute_cd(sel)
+  local eff = effective_items()
+  local cd = compute_cd(eff)
   local cur_cd = f32(si, OFF_CD)
   local bad
   if math.abs((cur_cd or -1) - cd) > 0.01 then bad = 'CD 不符' end
   local rack = RACKADDR
   if not bad and rack then
     for i = 1, SLOTS do
-      local e = ITEMS[sel[i]]
+      local e = eff[i]
       local want = e.none and string.rep('\0', 8) or e.hash_le
       if api.read(rack + (i - 1) * RACK_SLOT + SL_ITEM, 8) ~= want then bad = ('槽%d 被改回'):format(i) break end
     end
@@ -582,13 +678,7 @@ local function register_mom()
     mom.register_option(id, {
       type = 'choice', label = ('补给槽位 %d'):format(i), mod = '自定义补给',
       choices = choices, default = CFG_SEL[i] or IDX.none,
-      description = function()
-        local sel = sel_from_mom()
-        local cd = compute_cd(sel)
-        return ('当前 CD = %d s（4 槽：%s）'):format(cd, (function()
-          local t = {} for k = 1, SLOTS do t[k] = ITEMS[sel[k]].name end return table.concat(t, ' / ')
-        end)())
-      end,
+      description = function() return status_text() end,
     })
     if mom.on_change then
       mom.on_change(id, function(v)
@@ -602,7 +692,51 @@ local function register_mom()
       end)
     end
   end
-  report('已注册 ModOptionsMenu：4 个补给槽位（choice）', true)
+  -- SEAF 大炮覆盖：手动开关 + 4 个独立槽位
+  local arty_choices = {}
+  for i, e in ipairs(ARTY_ITEMS) do arty_choices[i] = e.name end
+  mom.register_option('custom_supply.seaf_arty', {
+    type = 'toggle', label = 'SEAF 大炮覆盖（仅当存在超级地球大炮时可用）', mod = '自定义补给',
+    default = CFG_ARTY and true or false,
+    description = function()
+      if not arty_enabled() then
+        return '未启用：只读取上面四个补给槽位（仅当场上存在超级地球大炮/SEAF Artillery 时使用）'
+      end
+      return '已启用：下面四个槽位生效；下层=补给类时沿用上层对应补给 ｜ ' .. status_text()
+    end,
+  })
+  if mom.on_change then
+    mom.on_change('custom_supply.seaf_arty', function(v)
+      local ok, err = pcall(function()
+        report(('SEAF 大炮覆盖：%s'):format(v and '开' or '关'), true)
+        state.applied = false
+      end)
+      if not ok then state.errs = state.errs + 1 report('on_change 异常: ' .. tostring(err), true) end
+    end)
+  end
+  for i = 1, SLOTS do
+    local id = 'custom_supply.arty' .. i
+    mom.register_option(id, {
+      type = 'choice', label = ('大炮槽位 %d'):format(i), mod = '自定义补给',
+      choices = arty_choices, default = CFG_ARTY_SEL[i] or 1,
+      description = function()
+        if not arty_enabled() then return '未启用（只读上面四个补给槽位）' end
+        return status_text()
+      end,
+    })
+    if mom.on_change then
+      mom.on_change(id, function(v)
+        local ok, err = pcall(function()
+          local sel = arty_sel_from_mom()
+          sel[i] = tonumber(v) or sel[i]
+          report(('大炮槽位 %d 改为 %s'):format(i, ARTY_ITEMS[sel[i]].name), true)
+          state.applied = false
+        end)
+        if not ok then state.errs = state.errs + 1 report('on_change 异常: ' .. tostring(err), true) end
+      end)
+    end
+  end
+  report('已注册 ModOptionsMenu：4 个补给槽位 + SEAF 大炮覆盖（1 开关 + 4 槽位）', true)
 end
 
 -- ============================================================ 帧
