@@ -1,7 +1,7 @@
 # Custom Supply
 
 **Project / download:** https://github.com/junze0910/junze-hd2-lua-mod/releases/latest
-**Current version:** v0.1e (dev build, in-game verified, unpublished)
+**Current version:** v0.1e (in-game verified, released)
 
 ## Description
 

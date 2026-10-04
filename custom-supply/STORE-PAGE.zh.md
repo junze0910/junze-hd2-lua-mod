@@ -1,7 +1,7 @@
 # 自定义补给（Custom Supply）
 
 **项目地址 / 下载：** https://github.com/junze0910/junze-hd2-lua-mod/releases/latest
-**当前版本：** v0.1e（开发版，实机通过，未发布）
+**当前版本：** v0.1e（已实机通过，已发布）
 
 ## Description · 简介
 
