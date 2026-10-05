@@ -14,13 +14,15 @@
 local M = {}
 
 -- 实测常量（定稿 §10，来源：MissionProbe v4 三次会话）
---   组件表 5 张**同住一个区段**，固定偏移
+--   组件表 6 张**同住一个区段**，固定偏移
 local COMPONENT = {
     { off = 0x8111C,   hash = 0xFB8D88A3, size = 52000, name = 'WeaponMagazineComponentData' },
     { off = 0x5DDC5C,  hash = 0xA98BB156, size = 42568, name = 'HellpodRackComponentData'    },
     { off = 0x6F0A0C,  hash = 0xDDB5C03F, size = 5072,  name = 'HellpodPayloadComponentData' },
     { off = 0x1A0622C, hash = 0x1EBA7593, size = 7960,  name = 'TurretComponentData'         },
     { off = 0x1C6A3FC, hash = 0x3845B1E0, size = 24744, name = 'MountComponentData'          },
+    -- v0.8.2 新增：武器的弹道组件（projectile_type 在记录 +0）。装甲车线的 40mm 弹种切换用它。
+    { off = 0x2C414EC, hash = 0x45171B68, size = 176224, name = 'ProjectileWeaponComponentData' },
 }
 -- 探针：先读第 1 张的偏移，若「LDLD + 哈希」对上 ⇒ 这个区段就是组件区段
 local GATE = { off = COMPONENT[1].off, hash = COMPONENT[1].hash }

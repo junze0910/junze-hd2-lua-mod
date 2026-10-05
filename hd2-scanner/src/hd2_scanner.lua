@@ -25,7 +25,7 @@ local MOD = 'mods/junze/hd2_scanner'
 if rawget(_G, MOD) then return end
 
 local P = {
-    version  = '0.8.1',
+    version  = '0.8.2',
     api      = 1,
     status   = 'starting',
     mode     = 'float',      -- 'float' | 'tab'
