@@ -1,6 +1,6 @@
 # No Large Piercing
 
-**Downloads · 下载：** repository `dist/No-Large-Piercing-v1.5.zip`（或 Releases 页）
+**Downloads · 下载：** repository `dist/No-Large-Piercing-v1.6.zip`（或 Releases 页）
 
 <!-- 双语发布页 · Bilingual store page
      Description / Installation instructions / Main features / Requirements / Shout outs
@@ -94,10 +94,15 @@ drifted between game versions.
   EXO-45 外骨骼导弹、MG-206、R-63 勤勉、P-2 / P-35 手枪**，以及**机器人各型火箭弹 / 火炮 /
   坦克炮、光能族等离子与光束、虫族酸液、轨道与飞鹰系战备**（完整 106 条清单见 [INTRO.md](https://github.com/junze0910/junze-hd2-lua-mod/blob/main/no-large-piercing/INTRO.md)）。
 
-* **One-shot by design (v1.5).** The write happens once, right after boot; the scanner then stops
-  for good. The only resident cost is a canary that re-reads 108 four-byte addresses once a minute
-  (432 bytes/min) and re-writes anything the game clobbers.
-  **v1.5 = 一次性写入**：开机写一次就彻底停扫；常驻开销只剩每分钟读 108 个 4 字节地址（432 字节/分钟）的金丝雀。
+* **Table lookup delegated to HD2 Scanner (v1.6).** The two settings tables are already on the
+  Scanner's table list, so this mod does **not scan memory at all**: it subscribes, asks for an
+  urgent round (≈0.5 s), and writes whatever copies the broadcast reports — new copies after a
+  map reload are picked up automatically. Without the Scanner it falls back to a one-shot self-scan
+  at boot.
+  **v1.6 = 找表交给 HD2 Scanner**：这两张表本来就是 Scanner 的已登记表，本 mod 自己**不扫内存**，只订阅 + 催一轮（≈0.5 秒）+ 写它广播的每份副本（换图后的新副本会自动补上）；没装 Scanner 则回退到开机一次性自扫。
+* **One-shot, near-zero resident cost.** The write happens once; afterwards the only action is a
+  canary that re-reads 108 four-byte addresses once a minute (432 bytes/min).
+  **一次性写入**：写完即停扫；常驻开销只剩每分钟读 108 个 4 字节地址（432 字节/分钟）的金丝雀。
 * **Retired variants.** The old `→ 2` Medium build and the old maintenance-style scheduling
   (`ONE_SHOT = false`) both still exist, but only the `→ 0` one-shot build is maintained.
   `→ 2` 中口径版与旧的维护式调度（`ONE_SHOT = false`）都还在，但只维护 `→ 0` 的一次性版本。
@@ -124,7 +129,8 @@ drifted between game versions.
 
 ## Requirements · 依赖
 
-* **Helldivers 2** (tested on `1.8.45850.0`) — 《绝地潜兵 2》（测试于 `1.8.45850.0`）
+* **Helldivers 2** (tested on `1.8.45850.0`)
+* **HD2 Scanner (core line, v0.8.0+) — recommended**: with it this mod never scans memory; without it the mod falls back to its own one-shot scan — 《绝地潜兵 2》（测试于 `1.8.45850.0`）
 * **Bingus Shared Loader v15 or newer (API 1)** — required; without it the addon will not load.
   **Bingus Shared Loader v15 或更高（API 1）** —— 必需，缺少则 addon 不会加载
 * An HD2 mod manager that can import zips (HD2MM / Arsenal / …) —— 能导入 zip 的 HD2 mod 管理器

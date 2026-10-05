@@ -1,6 +1,6 @@
 # No Large Piercing
 
-**Downloads:** repository `dist/No-Large-Piercing-v1.5.zip` (or the Releases page)
+**Downloads:** repository `dist/No-Large-Piercing-v1.6.zip` (or the Releases page)
 
 ## Description
 
@@ -57,9 +57,12 @@ useful for confirming the enum has not drifted between game versions).
   E/AT-12 Anti-Tank Emplacement, EXO-45 exosuit missiles, MG-206, R-63 Diligence, P-2 / P-35
   sidearms**, plus **bot rockets / artillery / tank guns, Illuminate plasma and beams, Terminid
   acid**, and **Orbital / Eagle stratagems** — full 106-entry list in [INTRO.md](https://github.com/junze0910/junze-hd2-lua-mod/blob/main/no-large-piercing/INTRO.md).
-* **One-shot by design (v1.5).** The write happens once, right after boot; the scanner then stops
-  for good. The only resident cost is a canary that re-reads 108 four-byte addresses once a minute
-  (432 bytes/min) and re-writes anything the game clobbers.
+* **Table lookup delegated to HD2 Scanner (v1.6).** Both settings tables are already on the
+  Scanner's table list, so this mod does **not scan memory at all**: it subscribes, asks for an
+  urgent round (≈0.5 s), and writes every copy the broadcast reports — new copies after a map
+  reload are picked up automatically. Without the Scanner it falls back to a one-shot self-scan.
+* **Near-zero resident cost.** After the write the only action is a canary re-reading 108
+  four-byte addresses once a minute (432 bytes/min).
 * **Version-resilient by design.** Validation deliberately does **not** depend on record indices or
   hard-coded table sizes — the game re-orders records and appends new enum IDs between patches.
   If the record layout ever changes, the mod **refuses to write and logs the reason** instead of
@@ -74,6 +77,7 @@ useful for confirming the enum has not drifted between game versions).
 
 * **Helldivers 2** (tested on `1.8.45850.0`)
 * **Bingus Shared Loader v15 or newer (API 1)** — required; without it the addon will not load.
+* **HD2 Scanner (core line, v0.8.0+)** — recommended: with it the mod never scans memory; without it the mod falls back to its own one-shot scan.
 * An HD2 mod manager that can import zips (HD2MM / Arsenal / …)
 * Windows x64
 

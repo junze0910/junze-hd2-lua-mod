@@ -10,7 +10,7 @@ Unofficial **runtime memory patches** for Helldivers 2 — no game files are mod
 | **Busier TD-110 Driver** | — | Alternative to TD-110 Co-Op: replaces the TD-110 driver-slot **smoke launcher** with a **manually-operated heavy MG turret** (pick one of the two — they touch the same slot) |
 | **More Balanced Exosuit - Patriot** | — | Exosuit arm swap (see below), **plus**: carrying the **Patriot** exosuit stratagem also gives you the **Emancipator** one — and **both exosuits get 1 use / 0 cooldown** |
 | **More Balanced Exosuit - Emancipator** | — | Same arm swap, **plus**: carrying the **Emancipator** stratagem also gives you the **Patriot** one — **both exosuits get 1 use / 0 cooldown** (pick **one** of these two — running both crashes the stratagem list) |
-| **No Large Piercing** | **Optimization** | Rewrites every **large-piercing hit-effect tier** (`HitEffectDamageType` `3` `PiercingLarge` / `4` `PiercingLargeHEAT`) to **`0` `None`** — no large-piercing impact FX at all. **v1.5: one-shot** — writes once at boot, then stops scanning entirely |
+| **No Large Piercing** | **Optimization** | Rewrites every **large-piercing hit-effect tier** (`HitEffectDamageType` `3` `PiercingLarge` / `4` `PiercingLargeHEAT`) to **`0` `None`** — no large-piercing impact FX at all. **v1.6: table lookup delegated to HD2 Scanner** (falls back to a self-scan when absent) |
 | ~~No Large Piercing (Medium)~~ | ~~Optimization~~ | The `→ 2 (PiercingMedium)` variant is **retired** as of v1.5 (the `→ 0` build is the only maintained one; the old zip sits in `build/_deprecated/from_dist/`) |
 | **HD2 Scanner** | — | Background scanner that hands table addresses to other mods (table broadcast + `memscan` + AOB stratagem table) — **required by** AC-8, Guard Dog and both Loadouts |
 | **Guard Dog Loadout** | — | Guard dog's mounted weapon: **3-way selectable** (vanilla AR-23P / SEAF MG-43 / custom hash) — replaces *Stronger Kinetic Guard Dog* |
@@ -39,7 +39,7 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 | **Busier TD-110 Driver** | **更忙的 TD-110 驾驶员** | — | TD-110 Co-Op 的**替代方案**：把驾驶员位（`+48`）的**烟雾弹发生器**换成**手操重机枪炮台**（可被驾驶员操作的实弹炮台）。与 TD-110 Co-Op **二选一** |
 | **More Balanced Exosuit - Patriot** | **更均衡的爱国者/解放者外骨骼 · 携带爱国者版** | — | **携带爱国者外骨骼战备时，额外携带解放者外骨骼战备**；另有挂载对调 + 两台外骨骼可用次数 1、冷却 0 |
 | **More Balanced Exosuit - Emancipator** | **更均衡的爱国者/解放者外骨骼 · 携带解放者版** | — | **携带解放者外骨骼战备时，额外携带爱国者外骨骼战备**；另有挂载对调 + 两台外骨骼可用次数 1、冷却 0。与上一行**二选一**（同时装会战备套娃崩溃） |
-| **No Large Piercing** | **没有大型穿刺** | **优化** | 把数据表里所有**大型穿刺命中特效档**（`HitEffectDamageType` = `3` `PiercingLarge` / `4` `PiercingLargeHEAT`）改写为 **`0` `None`** —— 完全不再播放大型穿刺命中特效。**v1.5 起为「一次性写入」**：开机写一次即彻底停扫 |
+| **No Large Piercing** | **没有大型穿刺** | **优化** | 把数据表里所有**大型穿刺命中特效档**（`HitEffectDamageType` = `3` `PiercingLarge` / `4` `PiercingLargeHEAT`）改写为 **`0` `None`** —— 完全不再播放大型穿刺命中特效。**v1.6：找表交给 HD2 Scanner 前置**（没装时回退自带一次性扫描） |
 | ~~没有大型穿刺（中口径版）~~ | — | — | `→ 2 (PiercingMedium)` 变体**自 v1.5 起停止维护/发布**（只保留 `→ 0` 版；旧包在 `build/_deprecated/from_dist/`） |
 | **HD2 Scanner** | **HD2 扫描器（前置）** | **前置** | 给其他 mod 提供「数据表在哪」的后台扫描内核 + 通用全量扫描 + **AOB 战备表定位**；界面是**原生 MODS 页的 3 行**（状态 / 解析战备表 / 写诊断）—— **AC-8、实弹狗、护卫犬自选、TD-110 挂载、EXO 自选都要装它** |
 | **Guard Dog Loadout** | **护卫犬挂载自选** | **单兵** | 护卫犬挂载武器**三选一**（原装 AR-23P / SEAF MG-43 / 自定义哈希）—— 取代「更强的实弹狗」 |
@@ -83,7 +83,7 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
    | `TD-110-Busier-Driver-v1.2.zip` | 更忙的 TD-110 驾驶员（**已废弃**，与上一个**二选一**；`dist/` 已下架） |
    | `More-Balanced-Exosuit-Patriot-v1.2.zip` | 更均衡的外骨骼 · **携带爱国者版**（携带爱国者战备 → 额外携带解放者战备；可用次数 1、冷却 0） |
    | `More-Balanced-Exosuit-Emancipator-v1.2.zip` | 更均衡的外骨骼 · **携带解放者版**（同上，方向相反）。与上一个**二选一** |
-   | `No-Large-Piercing-v1.5.zip` | 没有大型穿刺（大型穿刺档 → `0` None，完全不打）。v1.5 = **一次性写入**：开机写一次即停扫 |
+   | `No-Large-Piercing-v1.6.zip` | 没有大型穿刺（大型穿刺档 → `0` None，完全不打）。v1.6 = **找表交给 HD2 Scanner 前置**（本体 0 次内存扫描；没装时回退一次性扫描） |
    | `No-Large-Piercing-Medium-v1.4.zip` | **已废弃**：中口径版自 v1.5 起停止维护（旧包在 `build/_deprecated/from_dist/`） |
 
    > 🗂️ **MODS 页分组（2026-10-05 起）**：上面所有包在游戏 ESC → MODS 页里的选项**统一并进同一个分组 `A HD2 MOD COLLECTION`**。

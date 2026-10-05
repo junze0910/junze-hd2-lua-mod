@@ -3,7 +3,12 @@
 -- ===========================================================================
 --  No Large Piercing —— 命中特效等级 → 2 (HitEffectDamageType_PiercingMedium)
 --
---  ★ v1.5 起【一次性写入】（ONE_SHOT）：启动时把两张表写完、回读验证，然后
+--  ★ v1.6【找表交给 HD2 Scanner 前置】（仓库 core 线）：Scanner 本来就每 30 秒定位
+--    ProjectileSettings / ExplosionSettings（它的已登记表）并广播每个副本的 LDLD 地址；
+--    本 mod 只做 订阅 → poll → 对每个地址走 apply()，**自己不再扫内存**（开机那 23 秒没了）。
+--    Scanner 缺席、或接上后 30 秒还没广播到这两张表 → 自动回退到下面这套自带扫描。
+--
+--  ★ v1.5 起【一次性写入】（ONE_SHOT）（现在是 Scanner 缺席时的回退路径）：启动时把两张表写完、回读验证，然后
 --    彻底停止扫描 —— 不再有维护窗口 / 热区自检 / 兜底全量。稳态开销 0；
 --    唯一的常驻动作是「金丝雀」：每 WATCHDOG_EVERY 帧只读已写入的 108 个地址
 --    （432 B≈0 成本），发现被冲掉就退回 v1.4 的维护式调度。
@@ -37,7 +42,7 @@
 --  ※ 与 mods/dsh/effect_grade_0 互斥，同一时间只能启用其中一个。
 -- ===========================================================================
 
-local VERSION = '1.5'
+local VERSION = '1.6'
 local MOD = 'mods/dsh/no_large_piercing_medium'
 if rawget(_G, MOD) then return end
 
@@ -280,6 +285,7 @@ local QUIET_FULL_EVERY      = 40    -- 每 N 次热区自检做一次全量兜�
 local ONE_SHOT              = true
 local ONE_SHOT_DEADLINE     = 10800   -- 入口帧起 3 分钟内没找齐两张表 → 记日志并退出一次性模式
 local WATCHDOG_EVERY        = 3600    -- 金丝雀周期（帧，≈60 秒）；0 = 完全静默，连金丝雀也不要
+local SCANNER_GIVEUP_FRAMES = 1800    -- 接上 Scanner 后 30 秒仍拿不到这两张表 → 回退自带扫描
 
 -- 现在是「抢时间」阶段吗？
 --   一次性模式：找表阶段全程抢时间（整轮只跑一次，且有 ONE_SHOT_DEADLINE 兜底）；
@@ -327,6 +333,19 @@ local TABLES = {
 for _, t in ipairs(TABLES) do
   t.sig = MAGIC .. string.char(1, 0, 0, 0) .. hex_le(string.format('%08X', t.type_hash))
 end
+
+-- ===========================================================================
+-- 前置：HD2 Scanner（core 线）—— 找表交给它
+--   Scanner 的 kernel 已登记 ProjectileSettings(0xBD4042C2) / ExplosionSettings(0x2AEA2592)
+--   （它按"区段基址 +0x4 是不是 LDLD + 类型哈希"逐个区段读 16 字节定位，代价 ≈ 每区段 1 次读，
+--    而不是我们整片 4 GB 的扫），命中后广播 {addr = LDLD 魔数地址, size}，并每 30 秒复核、
+--    地址变化时递增 generation（换图后的新副本它会重新报出来）。
+--   我们只订阅 + poll + 写入；Scanner 缺席时回退到本文件自带的一次性全量扫描。
+-- ===========================================================================
+local SCAN = {
+  api = nil, retry_at = 0, warned = false,
+  polls = 0, applied = 0, attached_at = nil, gave_up = false,
+}
 
 -- ===========================================================================
 -- 自检测：模式串就活在 Lua 堆里，扫描必然会命中自己
@@ -922,8 +941,14 @@ local function one_shot_finish()
   else
     tail = '（金丝雀已关闭：之后不做任何事）'
   end
-  report(('一次性写入完成：%d 张表 / %d 个地址全部命中，扫描全部停止%s')
-    :format(resolved_tables(), slots, tail), true)
+  if SCAN.api and not SCAN.gave_up then
+    report(('已交给 HD2Scanner：%d 张表 / %d 个地址全部命中；本体不再扫内存，'
+      .. '只在 Scanner 报出新副本或金丝雀发现异常时动手%s')
+      :format(resolved_tables(), slots, tail), true)
+  else
+    report(('一次性写入完成：%d 张表 / %d 个地址全部命中，扫描全部停止%s')
+      :format(resolved_tables(), slots, tail), true)
+  end
 end
 
 -- 金丝雀：一次性模式下唯一的常驻开销（默认每次 432 字节）
@@ -952,10 +977,85 @@ rawset(_G, 'HD2_NoLargePiercing_Rescan', function()
   state.deadline_frame = state.frame + ONE_SHOT_DEADLINE
   state.next_scan_frame = state.frame + 1
   state.manual_rounds = (state.manual_rounds or 0) + 1
-  report(('手动重新扫描（第 %d 次）：已清空已写入清单，重新定位两张表')
-    :format(state.manual_rounds), true)
+  if SCAN.api and type(SCAN.api.declare_need) == 'function' then pcall(SCAN.api.declare_need) end
+  report(('手动重新扫描（第 %d 次）：已清空已写入清单，重新定位两张表%s')
+    :format(state.manual_rounds, SCAN.api and '（已催 Scanner 插队一轮）' or ''), true)
   return true
 end)
+
+-- ---------------------------------------------------------------- Scanner 前置
+-- 懒接入：每 60 秒看一次 _G.HD2Scanner（addon 加载顺序不保证 Scanner 在前）
+local function scanner_get()
+  if SCAN.api then return SCAN.api end
+  if SCAN.gave_up then return nil end
+  local now = os.clock()
+  if now < SCAN.retry_at then return nil end
+  SCAN.retry_at = now + 60
+  local S = rawget(_G, 'HD2Scanner')
+  if type(S) == 'table' and tonumber(S.version) == 1
+     and type(S.poll) == 'function' and type(S.request) == 'function' then
+    SCAN.api = S
+    SCAN.attached_at = state.frame
+    for _, t in ipairs(TABLES) do
+      pcall(S.request, t.type_hash, t.name)
+    end
+    if type(S.declare_need) == 'function' then pcall(S.declare_need) end   -- 0.5 秒插队一轮
+    if state.regions and not state.all_done then
+      state.regions = nil
+      report('已接上 HD2Scanner（前置）：中止自带的扫描，找表改由 Scanner 提供', true)
+    else
+      report('已接上 HD2Scanner（前置）：找表交给 Scanner（urgent 一轮 ≈0.5 秒），本体不扫内存', true)
+    end
+    return S
+  end
+  if not SCAN.warned then
+    SCAN.warned = true
+    report('未发现 _G.HD2Scanner —— 回退到自带的一次性全量扫描（每 60 秒再看一次前置）', true)
+  end
+  return nil
+end
+
+-- 把 Scanner 广播的每一份副本都过一遍 apply()（已处理过的地址会立刻返回）
+local function scanner_poll_apply()
+  local S = SCAN.api
+  if not S then return 0 end
+  local n = 0
+  for _, t in ipairs(TABLES) do
+    local ok, snap = pcall(S.poll, t.type_hash)
+    SCAN.polls = SCAN.polls + 1
+    if ok and type(snap) == 'table' and type(snap.entries) == 'table' then
+      for i = 1, #snap.entries do
+        local e = snap.entries[i]
+        if type(e) == 'table' and type(e.addr) == 'number' and e.addr > 0 then
+          local ok2, err2 = pcall(apply, e.addr, t)
+          if not ok2 then
+            state.errs = state.errs + 1
+            if state.errs <= 5 then report('Scanner 副本处理异常: ' .. tostring(err2), true) end
+          else
+            n = n + 1
+          end
+        end
+      end
+    end
+  end
+  SCAN.applied = SCAN.applied + n
+
+  if state.all_done and not state.finished then one_shot_finish() end
+
+  if state.finished and WATCHDOG_EVERY > 0 and state.frame % WATCHDOG_EVERY == 0 then
+    local okc, errc = pcall(canary)
+    if not okc then report('金丝雀异常: ' .. tostring(errc), true) end
+  end
+
+  -- Scanner 在，但一直广播不到这两张表 → 回退到自带扫描
+  if not state.all_done and SCAN.attached_at
+     and (state.frame - SCAN.attached_at) > SCANNER_GIVEUP_FRAMES then
+    SCAN.gave_up = true
+    report(('Scanner 在 %d 帧内没有广播到这两张表 → 回退到自带的一次性全量扫描')
+      :format(SCANNER_GIVEUP_FRAMES), true)
+  end
+  return n
+end
 
 local function frame(dt)
   state.frame = state.frame + 1
@@ -965,13 +1065,30 @@ local function frame(dt)
     started = true
     state.next_scan_frame = state.frame
     state.deadline_frame = state.frame + ONE_SHOT_DEADLINE
-    if ONE_SHOT and not state.oneshot_disabled then
+    scanner_get()                      -- 前置在就接上（不在则记一次日志 + 60 秒后再看）
+    if SCAN.api and not SCAN.gave_up then
+      report(('已接上 HD2Scanner：3/4 → %s；找表交给 Scanner，本体不扫内存')
+        :format(TARGET_LABEL), true)
+    elseif ONE_SHOT and not state.oneshot_disabled then
       report(('一次性写入模式：3/4 → %s；启动时扫一遍（每帧 %d ms），写完即停')
         :format(TARGET_LABEL, mfloor(SCAN_BUDGET_HURRY * 1000)), true)
     else
       report(('目标 3/4 → %s；常态每帧预算 %d ms，打完前 %d ms')
         :format(TARGET_LABEL, mfloor(SCAN_BUDGET * 1000), mfloor(SCAN_BUDGET_HURRY * 1000)), true)
     end
+  end
+
+  -- 前置可能比我们后加载（addon 顺序不保证）→ 每帧探测；已接上时是空操作
+  if not SCAN.api then scanner_get() end
+
+  -- ★ 前置 HD2 Scanner 在 → 找表完全交给它（每帧只 poll 两下，成本≈0）
+  if SCAN.api and not SCAN.gave_up then
+    local okS, errS = pcall(scanner_poll_apply)
+    if not okS then
+      state.errs = state.errs + 1
+      if state.errs <= 5 then report('Scanner 取表异常: ' .. tostring(errS), true) end
+    end
+    return
   end
 
   -- ★ 一次性模式（v1.5 默认）：两张表都写完 → 彻底停扫（只留金丝雀）。
