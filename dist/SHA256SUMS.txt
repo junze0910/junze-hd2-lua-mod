@@ -1,5 +1,5 @@
 efd60216ddac3d6046178899196b4fa6bd01cf10ba8fbc6ff1bc6f33bf4df5cf  AC8-Rack-Backpack-v2.2.zip
-47dadf3e995e1f75067e688c94893bddacb3515ced97987af77389c911b15f0f  Armor-Tweaks-v1.0.0.zip
+3d6a092e8a2a8dd9ebacfbd12b4465631740f44bb561a1ae11bd0dc9c8f58d3b  Armor-Tweaks-v1.1.0.zip
 545cae7bbdf37437cb4f3ce056bb7925eb7e51410327cdd311cbc9d3617fd523  Custom-Supply-v0.1f.zip
 556ce922e3a603ba3b97bf61acd064a04091d29376e75c25536b244ba1620274  ExoLoadout-v0.8.1.zip
 5e618015267844305b5900e0fc76fe22fda0debbbeae8e3895ecf4b50c1cece5  Guard-Dog-MG43-v2.1.zip

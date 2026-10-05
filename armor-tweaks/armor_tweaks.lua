@@ -1,7 +1,7 @@
 -- HD2-Addon: mods/dsh/armor_tweaks
 --
 -- ===========================================================================
---  TD-110 挂载切换（tank_storm_loadout）
+--  装甲车辆轻度改装（armor_tweaks）—— TD-110 风暴漩涡 / TD-220 堡垒 MK XVI / M-102 快速侦查载具
 --  风暴漩涡坦克 tank_storm = 12738988949818115065 = 0xB0C9FAF4AF8903F9
 --
 --  ① 挂载四档模式（改【驾驶员位 +48】和【炮手位 +24】两个挂载项的 item）：
@@ -23,6 +23,13 @@
 --
 --  ⚠ 弹匣不改：旧「忙碌驾驶员」包会把该炮台的 WeaponMagazineComponentData 容量改成
 --      1000 发；用户 2026-10-02 拍板**去掉**这条腿 —— 本 mod 不碰那张表。
+--
+--  ③ M-102 快速侦查载具（2026-10-05 本批新增）：MountComponentData 里两个变体各只有**槽0**：
+--        M-102              0xCC21C7FFD3EBEFB9  recIdx 19
+--        M-102（地图产出）   0xE9CD1D0D118886AF  recIdx 117
+--      两条记录逐字段相同：槽0 原装 = frv_mg（0x085C1EDB038EC24E），挂点 node 0x53BEC437。
+--      可选：原装车载重机枪 ⇄ 重机枪武器站 ⇄ 40mm 机炮武器站（cfg: m102）。
+--      ⚠ M-102 的车载武器**没有 TurretComponentData 记录**，所以「射界 360°」那条腿对它不适用。
 --
 --  离线实测（generated_entities.dl_bin，2026-10-02）：
 --      MountComponentData 0x3845B1E0  size=24744  记录区起点 +5184（324×16）  163 条记录
@@ -54,7 +61,7 @@
 --  红线：只写目标字段；写前 VirtualProtect、写后回读校验；失败一律记 refuse，绝不当成功。
 -- ===========================================================================
 
-local VERSION = '1.0.0'
+local VERSION = '1.1.0'
 local MOD = 'mods/dsh/armor_tweaks'
 if rawget(_G, MOD) then return end
 rawset(_G, MOD, { frame = 0, phase = 'starting', writes = 0, refusals = 0, errs = 0,
@@ -160,6 +167,18 @@ local TD220_SLOT_IX = 1                   -- 槽1 = +24
 local NODE_TD220_GUN = 3809236753         -- 0xE30C5711（槽0 主炮）
 local NODE_TD220_HMG = 3085546557         -- 0xB7E9B43D（槽1 同轴重机枪；⚠ 与 TD-110 炮手位共用）
 
+-- M-102 快速侦查载具（2026-10-05 本批新增）：两个变体共用同一套挂载布局
+--   MountComponentData recIdx 19（M-102）/ 117（地图产出），两条记录逐字段相同：
+--   只用槽0，原装 = frv_mg（0x085C1EDB038EC24E），挂点 node 0x53BEC437
+--   （M-104 炽热型的火焰喷射器用同一个 node；M-103 的 AR 哨戒炮不是这个 node）
+local M102_ENT        = 'CC21C7FFD3EBEFB9'  -- M-102 本体（recIdx 19）
+local M102_ENT_LE     = le(M102_ENT)
+local M102_MAP_ENT    = 'E9CD1D0D118886AF'  -- M-102（地图产出）本体（recIdx 117）
+local M102_MAP_ENT_LE = le(M102_MAP_ENT)
+local M102_SLOT_IX    = 0                   -- 本车只用了槽0
+local NODE_M102_GUN   = 1405010999          -- 0x53BEC437（车载武器挂点）
+local ITEM_FRV_MG     = '085C1EDB038EC24E'  -- M-102 原装车载重机枪（frv_mg）
+
 local R_MIN, R_MAX, R_CAP = 1024, 4194304, 262144
 
 local RACK_ENT     = 'B0C9FAF4AF8903F9'  -- TD-110 本体（MountComponentData 的索引键）
@@ -197,11 +216,15 @@ end
 -- TD-220 原装同轴重机枪：不在「可选白名单」里（玩家不能主动选它），但**要能写回去**（初始化 / 切回原装）
 ITEM_LE[TD220_HMG]    = le(TD220_HMG)
 ITEM_LABEL[TD220_HMG] = 'TD-220 同轴重机枪（原装）'
+-- M-102 原装车载重机枪：同上（不可主动选，但要认得出 / 写得回）
+ITEM_LE[ITEM_FRV_MG]    = le(ITEM_FRV_MG)
+ITEM_LABEL[ITEM_FRV_MG] = 'M-102 车载重机枪（原装）'
 
 -- 「认识的」item：槽位里的值不在这里面 = 别的 mod 动过 -> 拒写（不覆盖别人的改动）
 local KNOWN_ITEM = {}
 for _, it in ipairs(ITEM_LIST) do KNOWN_ITEM[it.le] = true end
-KNOWN_ITEM[le(TD220_HMG)] = true      -- TD-220 原装同轴重机枪也算「认识的」（否则初始化写不回去）
+KNOWN_ITEM[le(TD220_HMG)]   = true    -- TD-220 原装同轴重机枪也算「认识的」（否则初始化写不回去）
+KNOWN_ITEM[le(ITEM_FRV_MG)] = true    -- M-102 原装车载重机枪同理
 
 -- 射界的两种形态（下限 float + 上限 float，共 8 字节 LE）
 --   -20.0f = 0xC1A00000 / +20.0f = 0x41A00000（原装）
@@ -286,7 +309,7 @@ state.presets, state.items = PRESETS, ITEM_LIST
 local CFG, CFG_FILE
 CFG = { mode = 'coop', coop_gun = 'smoke', busy_gun = 'hmg', yaw360 = true,
         driver = ITEM_LASER, gunner = ITEM_SMOKE,     -- 自定义的出场默认 = 驾驶员激光 / 炮手烟雾
-        td220 = 'hmg', proj = 'ap' }                  -- 2026-10-05：TD-220 重机枪位 / 40mm 弹种
+        td220 = 'hmg', proj = 'ap', m102 = 'frv' }    -- 2026-10-05：TD-220 重机枪位 / 40mm 弹种 / M-102 车载武器
 do
   local loader = rawget(_G, 'CowboyBingusModLoader')
   local base = loader and type(loader.log_directory) == 'string'
@@ -318,6 +341,8 @@ local function cfg_parse(text)
       if v == 'hmg' or v == 'ac40' then CFG.td220 = v end
     elseif k == 'proj' then
       if v == 'ap' or v == 'aa' then CFG.proj = v end
+    elseif k == 'm102' then
+      if v == 'frv' or v == 'hmg' or v == 'ac40' then CFG.m102 = v end
     end
   end
 end
@@ -333,6 +358,8 @@ local function cfg_write_default()
     f:write('coop_gun=smoke\n')
     f:write('# busy_gun（忙碌·驾驶员位）: hmg(重机枪) | autocannon(40mm机炮)\n')
     f:write('busy_gun=hmg\n')
+    f:write('# m102（M-102 车载武器）: frv(原装车载重机枪) | hmg(重机枪武器站) | ac40(40mm机炮武器站)\n')
+    f:write('m102=frv\n')
     f:write('# yaw360: 1 = 激光 + 加特林 的水平射界都改成 ±180（360°）；0 = 写回原装 ±20\n')
     f:write('#   ⚠ 只解水平射界（+28/+32），**不解除视角限制**；与模式无关\n')
     f:write('yaw360=1\n')
@@ -376,6 +403,7 @@ local function cfg_save()
     f:write('gunner=' .. tostring(CFG.gunner) .. '\n')
     f:write('td220=' .. tostring(CFG.td220) .. '\n')
     f:write('proj=' .. tostring(CFG.proj) .. '\n')
+    f:write('m102=' .. tostring(CFG.m102) .. '\n')
     f:close()
   end)
   if not ok then
@@ -398,8 +426,8 @@ local function cfg_hot()
     cfg_parse(text)
     cfgt.text = text
     state.force = true                 -- 刚改过 -> 下一帧不管 generation 先写一轮
-    report(('cfg 热重读: mode=%s coop_gun=%s busy_gun=%s yaw360=%s'):format(
-      tostring(CFG.mode), tostring(CFG.coop_gun), tostring(CFG.busy_gun),
+    report(('cfg 热重读: mode=%s coop_gun=%s busy_gun=%s m102=%s yaw360=%s'):format(
+      tostring(CFG.mode), tostring(CFG.coop_gun), tostring(CFG.busy_gun), tostring(CFG.m102),
       CFG.yaw360 and '1' or '0'), true)
   end
 end
@@ -437,7 +465,7 @@ local function touched(what)
   state.slots = {}
   state.force = true
   cfg_save()
-  report(what .. ' —— 挂载换完要**重新召唤**坦克才生效', true)
+  report(what .. ' —— 挂载换完要**重新召唤**载具才生效', true)
 end
 
 local function set_mode(key)
@@ -501,11 +529,12 @@ local function do_reset()
   CFG.coop_gun, CFG.busy_gun = 'smoke', 'hmg'
   CFG.driver, CFG.gunner = ITEM_LASER, ITEM_SMOKE
   CFG.td220, CFG.proj = 'hmg', 'ap'       -- 2026-10-05：TD-220 重机枪位 + 40mm 弹种也一起还原
+  CFG.m102 = 'frv'                       -- M-102 车载武器回原装
   state.force = true
   cfg_save()
   if mom_sync then pcall(mom_sync) end
   report('初始化：全部还原为原装（TD-110 驾驶员=烟雾弹 / 炮手=激光；TD-220 重机枪位=原装同轴重机枪；'
-      .. '40mm=穿甲；四条炮塔射界写回 ±20 且本局不再自动套用），cfg 也复位', true)
+      .. 'M-102 车载武器=原装重机枪；40mm=穿甲；四条炮塔射界写回 ±20 且本局不再自动套用），cfg 也复位', true)
 end
 
 -- ---------------------------------------------------------------- Scanner 前置（硬前置）
@@ -728,6 +757,8 @@ end
 -- ---------------------------------------------------------------- 名字（给日志与面板看）
 local NAME_OF_LE = {}
 for _, it in ipairs(ITEM_LIST) do NAME_OF_LE[it.le] = it.label end
+NAME_OF_LE[le(TD220_HMG)]   = ITEM_LABEL[TD220_HMG]     -- 原装件（不在白名单里）也要有名字
+NAME_OF_LE[le(ITEM_FRV_MG)] = ITEM_LABEL[ITEM_FRV_MG]
 local function item_name(bytes)
   if type(bytes) ~= 'string' then return '?' end
   return NAME_OF_LE[bytes] or ('未知(' .. hexs(bytes) .. ')')
@@ -764,7 +795,7 @@ local function may_overwrite(address, cur, want_le)
   if KNOWN_ITEM[cur] then return true end
   if state.slots[address] == cur then return true end
   if state.force_vanilla and (want_le == ITEM_LE[ITEM_SMOKE] or want_le == ITEM_LE[ITEM_LASER]
-     or want_le == ITEM_LE[TD220_HMG]) then
+     or want_le == ITEM_LE[TD220_HMG] or want_le == ITEM_LE[ITEM_FRV_MG]) then
     return true
   end
   return false
@@ -801,8 +832,71 @@ local function td220_record_ok(data, rec_off)
   return true
 end
 
--- 一张挂载表副本：选起点 -> 索引定位 TD-110 / TD-220 两条记录 -> 槽位复核 -> 写槽位
--- 2026-10-05：同一张表里同时照顾两辆车
+-- M-102 记录复核：只有槽0，挂点必须是车载武器 node（两个变体共用同一条记录布局）
+local function m102_record_ok(data, rec_off)
+  if d32(data, rec_off + M102_SLOT_IX * SLOT_SR + SLOT_NODE_OFF) ~= NODE_M102_GUN then return false, 'M-102 槽0 node' end
+  return true
+end
+
+-- M-102 目标 item（cfg.m102：frv 原装车载重机枪 / hmg 重机枪武器站 / ac40 40mm 机炮武器站）
+local M102_ITEM_NAME = { frv = 'M-102 车载重机枪（原装）',
+                         hmg = '重机枪武器站',
+                         ac40 = '40mm 机炮武器站' }
+local function m102_item()
+  if CFG.m102 == 'hmg'  then return ITEM_LE[ITEM_MG]   end
+  if CFG.m102 == 'ac40' then return ITEM_LE[ITEM_AC40] end
+  return ITEM_LE[ITEM_FRV_MG]
+end
+
+-- 每辆车一条「挂载作业」：索引区身份哈希 + node 复核函数 + 写槽位的动作。
+-- 2026-10-05：**按车独立** —— 哪辆车的记录缺失 / node 复核不过，就只跳过那辆车自己，
+--             绝不牵连其它车（旧版判据是「四条记录全找到且全部复核通过才写」，
+--             将来任何一个变体改名/换模型都会让整条挂载腿（含 TD-110）一起停写）。
+local function mount_jobs(mode)
+  local ac40 = (CFG.td220 == 'ac40')
+  local mwant, mname = m102_item(), (M102_ITEM_NAME[CFG.m102] or M102_ITEM_NAME.frv)
+  return {
+    { label = 'TD-110', ent = RACK_ENT_LE, check = record_ok,
+      write = function(addr, ix, off, data)
+        state.rec_ix = ix
+        state.addr = { driver = addr + SLOT.driver * SLOT_SR,
+                       gunner = addr + SLOT.gunner * SLOT_SR }
+        if not state.flags_logged then
+          state.flags_logged = true
+          report(('挂载项 flags（诊断用，本 mod 不动）：主炮 [%s] 炮手 [%s] 驾驶员 [%s]'):format(
+            slot_flags(data, off, 0), slot_flags(data, off, SLOT.gunner),
+            slot_flags(data, off, SLOT.driver)), true)
+        end
+        local w = 0
+        w = w + write_slot(state.addr.driver, ITEM_LE[mode.driver], 'TD-110 驾驶员位(+48)', ix)
+        w = w + write_slot(state.addr.gunner, ITEM_LE[mode.gunner], 'TD-110 炮手位(+24)', ix)
+        return w
+      end },
+    { label = 'TD-220', ent = TD220_ENT_LE, check = td220_record_ok,
+      write = function(addr, ix)
+        state.rec_ix220 = ix
+        state.addr220 = addr + TD220_SLOT_IX * SLOT_SR
+        return write_slot(state.addr220,
+          ac40 and ITEM_LE[ITEM_AC40] or ITEM_LE[TD220_HMG],
+          ac40 and 'TD-220 重机枪位(+24) = 40mm 机炮武器站' or 'TD-220 重机枪位(+24) = 原装同轴重机枪', ix)
+      end },
+    { label = 'M-102', ent = M102_ENT_LE, check = m102_record_ok,
+      write = function(addr, ix)
+        state.rec_ix102 = ix
+        state.addr102 = addr + M102_SLOT_IX * SLOT_SR
+        return write_slot(state.addr102, mwant, 'M-102 车载武器位(slot0) = ' .. mname, ix)
+      end },
+    { label = 'M-102（地图产出）', ent = M102_MAP_ENT_LE, check = m102_record_ok,
+      write = function(addr, ix)
+        state.rec_ix102m = ix
+        state.addr102m = addr + M102_SLOT_IX * SLOT_SR
+        return write_slot(state.addr102m, mwant, 'M-102（地图产出）车载武器位(slot0) = ' .. mname, ix)
+      end },
+  }
+end
+
+-- 一张挂载表副本：选起点（最大候选优先）-> 逐车独立定位/复核/写槽位。
+-- 只要**至少一辆车**在这个起点复核通过，就认这个起点是真起点；通过的写、没通过的跳过并记日志。
 local function apply_mount(magic, mode)
   if not write_enabled then return 0 end
   local size = validate_table(magic, MOUNT_TYPE)
@@ -814,47 +908,41 @@ local function apply_mount(magic, mode)
   local data = api.read(magic + RDATA_OFF, size)
   if not data then return 0 end
 
+  local jobs = mount_jobs(mode)
   local cands = layout_cands(data, size, MOUNT_REC_SR)
+  local last_miss
   for _, cand in ipairs(cands) do
-    local rec_off, rec_ix = find_rec(data, cand.base, cand.n, RACK_ENT_LE,  MOUNT_REC_SR)
-    local o220,    ix220  = find_rec(data, cand.base, cand.n, TD220_ENT_LE, MOUNT_REC_SR)
-    if rec_off and o220 then
-      local ok,  why  = record_ok(data, rec_off)
-      local ok2, why2 = td220_record_ok(data, o220)
-      if ok and ok2 then
-        state.layout, state.rec_ix = cand.base, rec_ix
-        state.rec_ix220 = ix220
-        local base = magic + RDATA_OFF + rec_off
-        local b220 = magic + RDATA_OFF + o220
-        state.addr = { driver = base + SLOT.driver * SLOT_SR,
-                       gunner = base + SLOT.gunner * SLOT_SR }
-        state.addr220 = b220 + TD220_SLOT_IX * SLOT_SR
-        if not state.flags_logged then
-          state.flags_logged = true
-          report(('挂载项 flags（诊断用，本 mod 不动）：主炮 [%s] 炮手 [%s] 驾驶员 [%s]'):format(
-            slot_flags(data, rec_off, 0), slot_flags(data, rec_off, SLOT.gunner),
-            slot_flags(data, rec_off, SLOT.driver)), true)
+    local w, hit, miss = 0, 0, {}
+    for _, job in ipairs(jobs) do
+      local off, ix = find_rec(data, cand.base, cand.n, job.ent, MOUNT_REC_SR)
+      if not off then
+        miss[#miss + 1] = job.label .. '：记录没找到'
+      else
+        local ok, why = job.check(data, off)
+        if not ok then
+          miss[#miss + 1] = job.label .. '：' .. tostring(why) .. ' 复核不过'
+        else
+          hit = hit + 1
+          w = w + job.write(magic + RDATA_OFF + off, ix, off, data)
         end
-        local w = 0
-        w = w + write_slot(state.addr.driver, ITEM_LE[mode.driver], 'TD-110 驾驶员位(+48)', rec_ix)
-        w = w + write_slot(state.addr.gunner, ITEM_LE[mode.gunner], 'TD-110 炮手位(+24)', rec_ix)
-        local ac40 = (CFG.td220 == 'ac40')
-        w = w + write_slot(state.addr220,
-          ac40 and ITEM_LE[ITEM_AC40] or ITEM_LE[TD220_HMG],
-          ac40 and 'TD-220 重机枪位(+24) = 40mm 机炮武器站' or 'TD-220 重机枪位(+24) = 原装同轴重机枪', ix220)
-        return w
-      elseif not state.node_warned or state.frame - state.node_warned > 6000 then
-        state.node_warned = state.frame
-        report(('挂载表 0x%X：记录复核不过（TD-110 %s / TD-220 %s），本轮拒写'):format(
-          magic, tostring(why), tostring(why2)), true)
-        return 0
       end
     end
+    if hit > 0 then
+      state.layout = cand.base        -- 认表成功：这就是真起点（不再往更小的候选试）
+      if #miss > 0 and (not state.partial_warned or state.frame - state.partial_warned > 6000) then
+        state.partial_warned = state.frame
+        report(('挂载表 0x%X：以下车辆本轮跳过（按车独立，不影响其它车）—— %s'):format(
+          magic, table.concat(miss, '；')), true)
+      end
+      return w
+    end
+    last_miss = miss
   end
   if not state.mount_warned or state.frame - state.mount_warned > 6000 then
     state.mount_warned = state.frame
-    report(('挂载表 0x%X：%d 个候选起点都没定位到 TD-110 + TD-220 两条记录（size=%d），本轮拒写'):format(
-      magic, #cands, size), true)
+    report(('挂载表 0x%X：%d 个候选起点都没定位到任何一辆车（size=%d），本轮拒写%s'):format(
+      magic, #cands, size,
+      last_miss and ('（最后一个候选：' .. table.concat(last_miss, '；') .. '）') or ''), true)
   end
   return 0
 end
@@ -1149,6 +1237,9 @@ local function write_status()
       .. '  coop_gun=' .. tostring(CFG.coop_gun) .. '  busy_gun=' .. tostring(CFG.busy_gun),
     ('驾驶员位(+48) 目标 = %s'):format(item_name(mode and ITEM_LE[mode.driver] or nil)),
     ('炮手位(+24)   目标 = %s'):format(item_name(mode and ITEM_LE[mode.gunner] or nil)),
+    ('M-102 车载武器 = %s（recIdx %s / %s）'):format(
+      tostring(M102_ITEM_NAME[CFG.m102] or '?'), tostring(state.rec_ix102 or '?'),
+      tostring(state.rec_ix102m or '?')),
     ('射界开关 yaw360 = %s（只解水平 ±180；不解除视角）'):format(
       CFG.yaw360 and '1' or '0（原装 ±20）'),
     ('本体 = %s（recIdx 实测 %s）'):format(RACK_ENT, tostring(state.rec_ix or '?')),
@@ -1161,7 +1252,7 @@ local function write_status()
     ('Scanner = %s   polls = %d'):format(SCAN.api and '已接上' or '无', SCAN.polls),
     ('已写=%d 拒绝=%d 帧=%d 存活=%d/%d'):format(
       state.writes, state.refusals, state.frame, live, ylive),
-    '★ 挂载换完要**重新召唤**坦克；射界实时读，不用等',
+    '★ 挂载换完要**重新召唤**载具；射界实时读，不用等',
     'updated=' .. os.date('%Y-%m-%d %H:%M:%S'),
   }, '\n') .. '\n')
 end
@@ -1266,6 +1357,7 @@ end
 -- 预设 6 档 -> (mode, 子选项)。mode 仍是唯一的真值；预设只是它的快捷方式。
 local TD220_CHOICES = { '堡垒同轴重机枪（原装）', '40mm 机炮武器站' }
 local PROJ_CHOICES  = { '40mm 穿甲（原装）', '20mm 高射（近炸子母）' }
+local M102_CHOICES  = { '原装（车载重机枪）', '重机枪武器站', '40mm 机炮武器站' }
 
 local PRESET_CHOICES = {
   '原装（烟雾 / 激光）',
@@ -1295,6 +1387,12 @@ local function slot_index(slot)
   for i, lb in ipairs(CUSTOM_CHOICES) do
     if ITEM_BY_LABEL[lb] == CFG[slot] then return i end
   end
+  return 1
+end
+
+local function m102_index()
+  if CFG.m102 == 'hmg'  then return 2 end
+  if CFG.m102 == 'ac40' then return 3 end
   return 1
 end
 
@@ -1381,7 +1479,22 @@ local function register_mod_options()
     if mom_sync then pcall(mom_sync) end
   end)
 
-  -- 把 MOM 五个控件拨回当前 cfg（预设切换 / 初始化之后调）
+  -- ⑥ M-102 车载武器（三选一）
+  local m102id = 'armor_tweaks.m102'
+  mom.register_option(m102id, { type = 'choice', label = '[M-102] 车载武器', mod = MOM_GROUP,
+    choices = M102_CHOICES, default = m102_index(),
+    description = 'M-102 快速侦查载具（含「地图产出」变体）的车载武器槽（槽0 / node 0x53BEC437）：'
+      .. '原装车载重机枪，或换成「重机枪武器站」「40mm 机炮武器站」。'
+      .. '挂载换完要**重新召唤载具**才生效。' })
+  mom.on_change(m102id, function(v)
+    local i = tonumber(v) or 1
+    CFG.m102 = (i == 2) and 'hmg' or ((i == 3) and 'ac40' or 'frv')
+    CFG.yaw360 = true
+    touched(('M-102 车载武器 -> %s'):format(M102_ITEM_NAME[CFG.m102] or CFG.m102))
+    if mom_sync then pcall(mom_sync) end
+  end)
+
+  -- 把 MOM 六个控件拨回当前 cfg（预设切换 / 初始化之后调）
   mom_sync = function()
     if type(mom.set) ~= 'function' then return end
     pcall(mom.set, 'armor_tweaks.preset', preset_index())
@@ -1389,9 +1502,10 @@ local function register_mod_options()
     pcall(mom.set, 'armor_tweaks.gunner', slot_index('gunner'))
     pcall(mom.set, 'armor_tweaks.td220', (CFG.td220 == 'ac40') and 2 or 1)
     pcall(mom.set, 'armor_tweaks.proj', (CFG.proj == 'aa') and 2 or 1)
+    pcall(mom.set, 'armor_tweaks.m102', m102_index())
   end
 
-  report(('ModOptionsMenu: 已注册到「%s」（5 行：预设 / TD-110 炮手 + 驾驶员槽位 / TD-220 重机枪位 / 40mm 弹种；初始化在 Scanner 的全局按钮）'):format(MOM_GROUP), true)
+  report(('ModOptionsMenu: 已注册到「%s」（6 行：预设 / TD-110 炮手 + 驾驶员槽位 / TD-220 重机枪位 / 40mm 弹种 / M-102 车载武器；初始化在 Scanner 的全局按钮）'):format(MOM_GROUP), true)
 end
 
 -- ---------------------------------------------------------------- 挂载
@@ -1417,6 +1531,6 @@ if type(orig) == 'function' then
   end
 end
 
-report(('已加载 v%s（TD-110 mode=%s / TD-220 重机枪位=%s / 40mm 弹种=%s；射界 360°=%s；Scanner 前置）'):format(
-  VERSION, tostring(CFG.mode), tostring(CFG.td220), tostring(CFG.proj),
+report(('已加载 v%s（TD-110 mode=%s / TD-220 重机枪位=%s / 40mm 弹种=%s / M-102 车载武器=%s；射界 360°=%s；Scanner 前置）'):format(
+  VERSION, tostring(CFG.mode), tostring(CFG.td220), tostring(CFG.proj), tostring(CFG.m102),
   CFG.yaw360 and '开（默认）' or '关（初始化后，本局不再自动套用）'), true)
