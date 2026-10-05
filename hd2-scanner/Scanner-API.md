@@ -156,6 +156,34 @@ S.declare_need()      -- 置 urgent：下一帧就插队跑一轮
 
 Scanner 自己 MOM 面板的「点一下 = 立刻扫一轮」用的就是它。
 
+### 2.8 常用表的字段偏移（实测）
+
+> 偏移都是**记录内相对偏移**；记录长写在括号里。
+
+**`ProjectileWeaponComponentData`** `0x45171B68`（记录 616 B，v0.8.2+）
+
+| 偏移 | 内容 |
+|---|---|
+| `+0` | `projectile_type`（u32）→ `ProjectileSettings` 的索引 |
+| `+4 / +8 / +12` | `rounds_per_minute` x/y/z（**y = 射速**） |
+| `+52 / +56 / +60 / +64` | `heat_buildup`（每发积热 / 上限 / 散热速度 / 散热延迟） |
+| `+124` | `speed_multiplier` |
+| `+128 / +132` | `damage_addends` normal / durable（**本版全 0**） |
+| `+136 / +140` | `ap_addends` normal / durable（**本版全 0**） |
+| `+572` | `weapon_function_muzzle_velocity`（f32，全表 = 150.0，最好的基准锚） |
+| `+576` | `weapon_function_projectile_type`（u32，「模式弹」） |
+
+**`WeaponDataComponentData`** `0x88E4DBB1`（**内存**记录 1232 B；typelib 里写 1216，v0.8.3+）
+
+| 偏移 | 内容 |
+|---|---|
+| `+168`（8 B） | `function_info` = `{left(u32), right(u32)}`（`WeaponFunctionInfo`） |
+| `+176` | `crosshair`（u64） |
+| `+1008 / +1016` | `ammo_icon_inner` / `ammo_icon_outer`（u64） |
+
+⚠ 读 `WeaponDataComponentData` 前，消费者的读缓冲上限要 ≥ **462592**（超上限就整表跳过，别硬读）。
+⚠ `damage_addends` / `ap_addends` / `speed_multiplier` **本版全是空的**，别当伤害调节入口 —— 改伤害走 `DamageSettings`。
+
 ## 3. 通用全量扫描 API (`memscan`)
 
 ### 3.1 `scan_request(req)`
@@ -392,6 +420,9 @@ end)
 旧版 Scanner 没有这些字段 ⇒ 消费商务必先 `type(S.register_reset) == 'function'` 再挂钩，
 `mom_group` 则用同名字符串兜底（本仓库各 mod 的做法见 `guard_dog_loadout.lua` 的 `mom_group()`）。
 
+**广播表的版本**：`ProjectileWeaponComponentData` 需 **v0.8.2+**、`WeaponDataComponentData` 需 **v0.8.3+**。
+用 `request` / `poll` 拿，拿不到就自己回退 —— 旧版本不会广播它（别假设一定在）。
+
 ## 6. 已知数据表类型哈希
 
 | 表 | type_hash |
@@ -401,6 +432,8 @@ end)
 | `HellpodPayloadComponentData` | `0xDDB5C03F` |
 | `WeaponMagazineComponentData` | `0xFB8D88A3` |
 | `TurretComponentData` | `0x1EBA7593` |
+| `ProjectileWeaponComponentData` | `0x45171B68` |
+| `WeaponDataComponentData` | `0x88E4DBB1` |
 | `ProjectileSettings` | `0xBD4042C2` |
 | `ExplosionSettings` | `0x2AEA2592` |
 
@@ -555,6 +588,34 @@ S.declare_need()      -- sets urgent; a round starts on the next frame
 ```
 
 This is what Scanner's own MODS-page row ("click = scan one round now") uses.
+
+### 2.8 Common field offsets
+
+> All offsets are **relative to the start of a record**; the record size is given in brackets.
+
+**`ProjectileWeaponComponentData`** `0x45171B68` (record 616 B, v0.8.2+)
+
+| Offset | Content |
+|---|---|
+| `+0` | `projectile_type` (u32) → index into `ProjectileSettings` |
+| `+4 / +8 / +12` | `rounds_per_minute` x/y/z (**y = rate of fire**) |
+| `+52 / +56 / +60 / +64` | `heat_buildup` (per shot / max / bleed speed / bleed delay) |
+| `+124` | `speed_multiplier` |
+| `+128 / +132` | `damage_addends` normal / durable (**all 0 in this build**) |
+| `+136 / +140` | `ap_addends` normal / durable (**all 0 in this build**) |
+| `+572` | `weapon_function_muzzle_velocity` (f32, 150.0 across the whole table) |
+| `+576` | `weapon_function_projectile_type` (u32, the "mode projectile") |
+
+**`WeaponDataComponentData`** `0x88E4DBB1` (**in-memory** record 1232 B; typelib says 1216, v0.8.3+)
+
+| Offset | Content |
+|---|---|
+| `+168` (8 B) | `function_info` = `{left(u32), right(u32)}` (`WeaponFunctionInfo`) |
+| `+176` | `crosshair` (u64) |
+| `+1008 / +1016` | `ammo_icon_inner` / `ammo_icon_outer` (u64) |
+
+⚠ Before reading `WeaponDataComponentData`, the consumer read cap must be ≥ **462592** (otherwise the table is skipped).
+⚠ `damage_addends` / `ap_addends` / `speed_multiplier` are **empty in this build** — do not use them to tune damage; go to `DamageSettings`.
 
 ## 3. Generic full-memory scan API (`memscan`)
 
@@ -751,6 +812,9 @@ Pressing it: ① raises the kernel `urgent` flag, ② re-parses the AOB stratage
 `mom_group` / `register_reset` / `register_full_scan` require **Scanner v0.8.1+**.
 Always probe `type(S.register_reset) == 'function'` before hooking; fall back to a hard-coded group name otherwise.
 
+**Broadcast tables**: `ProjectileWeaponComponentData` needs **v0.8.2+**, `WeaponDataComponentData` needs **v0.8.3+**.
+Use `request` / `poll` and fall back yourself when it is missing (older builds do not broadcast it).
+
 ## 6. Known type hashes
 
 | Table | type_hash |
@@ -760,6 +824,8 @@ Always probe `type(S.register_reset) == 'function'` before hooking; fall back to
 | HellpodPayloadComponentData | `0xDDB5C03F` |
 | WeaponMagazineComponentData | `0xFB8D88A3` |
 | TurretComponentData | `0x1EBA7593` |
+| ProjectileWeaponComponentData | `0x45171B68` |
+| WeaponDataComponentData | `0x88E4DBB1` |
 | ProjectileSettings | `0xBD4042C2` |
 | ExplosionSettings | `0x2AEA2592` |
 

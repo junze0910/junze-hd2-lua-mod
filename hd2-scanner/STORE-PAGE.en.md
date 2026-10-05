@@ -19,17 +19,17 @@ Current consumers:
 - AC-8 Rack Backpack
 - Guard Dog MG-43 / GuardDogLoadout
 - EXO Loadout
+- Armor Tweaks
+- Custom Supply
 
 ## Features
 
-* Data table broadcast:
-  * MountComponentData
-  * HellpodRackComponentData
-  * HellpodPayloadComponentData
-  * WeaponMagazineComponentData
-  * TurretComponentData
-  * ProjectileSettings
-  * ExplosionSettings
+* Data table broadcast (7 component tables + 2 standalone; **use `request`/`poll` and fall back yourself**):
+  * WeaponMagazineComponentData · HellpodRackComponentData · HellpodPayloadComponentData
+  * TurretComponentData · MountComponentData
+  * ProjectileWeaponComponentData (v0.8.2+, `projectile_type` @ `+0`)
+  * **WeaponDataComponentData (new in v0.8.3**, fire-mode/function component, `function_info` @ `+168`)
+  * standalone: ProjectileSettings · ExplosionSettings
 * Generic full-memory scanning via `scan_request` / `scan_cancel` / `scan_status`:
   * 256 KB chunks with overlap
   * 8 MB per frame budget
@@ -47,13 +47,13 @@ Current consumers:
   **scan status** (click = run one round now; the description box shows live state),
   **resolve stratagem table (AOB)**, and **write diagnostics to log**
 * Self-check 11/11: decoders match the MDL reference bit-for-bit
-* Stable scanning: 7 table hits per round in live play
+* Stable scanning: per-round region/table counts are stable (v0.8.2 measured `命中 7` across rounds; **v0.8.3 broadcasts one more component table, so the count changes and has not been re-checked in-game**)
 * Log: `%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\HD2Scanner.log`
 
 ## Usage
 
 1. Install Bingus Shared Loader v15+ (API 1) or compatible MDL.
-2. Import `HD2-Scanner-v0.8.0.zip` with your HD2 mod manager.
+2. Import `HD2-Scanner-v0.8.3.zip` with your HD2 mod manager.
 3. Enable and deploy.
 4. Launch the game. Scanner runs in the background; no user action is required.
 5. Check `HD2Scanner.log` if needed.

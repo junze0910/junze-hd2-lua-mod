@@ -19,17 +19,17 @@ HD2 Scanner 是一个**前置 / 核心服务 mod**，本身不添加武器、皮
 - AC-8 机炮包架
 - Guard Dog MG-43 / GuardDogLoadout
 - EXO 战备自选
+- 装甲车辆轻度改装
+- 自定义补给
 
 ## Main features · 主要特性
 
-* **数据表广播**：
-  * `MountComponentData`
-  * `HellpodRackComponentData`
-  * `HellpodPayloadComponentData`
-  * `WeaponMagazineComponentData`
-  * `TurretComponentData`
-  * `ProjectileSettings`
-  * `ExplosionSettings`
+* **数据表广播**（组件区 7 张 + 常驻 2 张；**需新表的消费者**请用 `request`/`poll` 并自行回退）：
+  * `WeaponMagazineComponentData` · `HellpodRackComponentData` · `HellpodPayloadComponentData`
+  * `TurretComponentData` · `MountComponentData`
+  * `ProjectileWeaponComponentData`（v0.8.2+，弹道组件，`projectile_type` @ `+0`）
+  * **`WeaponDataComponentData`（v0.8.3 新增**，开火模式/功能组件，`function_info` @ `+168`）
+  * 常驻：`ProjectileSettings` · `ExplosionSettings`
 * **通用全量扫描 `memscan`**：
   * 对外 API：`scan_request` / `scan_cancel` / `scan_status`
   * 256 KB 分块，块间重叠，防止 pattern 跨块漏检
@@ -45,13 +45,13 @@ HD2 Scanner 是一个**前置 / 核心服务 mod**，本身不添加武器、皮
   * 详见 `Scanner-API.md` §4
 * **只读**：Scanner 不写任何游戏数据表；只扫描、只广播
 * **自检 11/11**：签名解码器与内存里的 MDL 基准逐位一致
-* **稳定扫描**：实机连续多轮 `命中 7`，每轮区段数/表数稳定
+* **稳定扫描**：每轮区段数 / 表数稳定（v0.8.2 时代实测连续多轮 `命中 7`；**v0.8.3 多广播 1 张组件表 ⇒ 计数会变、未实机复核**）
 * **日志**：`%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\HD2Scanner.log`
 
 ## How to use · 使用方法
 
 1. 安装 **Bingus Shared Loader v15+（API 1）**，或兼容的 MDL；
-2. 用 HD2 mod 管理器导入 `HD2-Scanner-v0.8.0.zip`；
+2. 用 HD2 mod 管理器导入 `HD2-Scanner-v0.8.3.zip`；
 3. 启用并部署；
 4. 启动游戏。Scanner 会自己在后台扫描，无需任何操作（界面上那 3 行只在需要排查时才点）；
 5. 如需检查状态，查看 `HD2Scanner.log`。

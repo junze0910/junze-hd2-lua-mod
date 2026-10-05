@@ -73,7 +73,7 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 
    | 文件 | Mod |
    |---|---|
-   | `HD2-Scanner-v0.8.2.zip` | **HD2 Scanner** —— 下面标「需 Scanner」的包都要装它（v0.8.0：AOB 战备表 API；v0.8.1：统一 MODS 页分组 + 全局「初始化」/「全内存扫描」注册表；**v0.8.2：新增广播 `ProjectileWeaponComponentData`（弹道表），装甲车辆线切 40mm 弹种要用**） |
+   | `HD2-Scanner-v0.8.3.zip` | **HD2 Scanner** —— 下面标「需 Scanner」的包都要装它（v0.8.0：AOB 战备表 API；v0.8.1：统一 MODS 页分组 + 全局「初始化」/「全内存扫描」注册表；v0.8.2：新增广播 `ProjectileWeaponComponentData`（弹道表），装甲车辆线切 40mm 弹种要用；**v0.8.3：新增广播 `WeaponDataComponentData`（开火模式 / 功能组件，暂无消费者，备用）**） |
    | `AC8-Rack-Backpack-v2.2.zip` | AC-8 废案 75 发备弹背包（**需 Scanner**；v2.2 撤掉 MODS 行 —— 它本来就全自动，不需要手动动作） |
    | `Guard-Dog-MG43-v2.1.zip` | 更强的实弹狗（**已废弃 / 不再维护**：已被「护卫犬挂载自选」取代，两者改同一条记录的同一个槽位**二选一**；**v2.1 是最后一版**，仅作留档随本批发布，新装请用护卫犬自选） |
    | `GuardDogLoadout-v1.0.2.zip` | 护卫犬挂载武器自选（**需 Scanner**；与「更强的实弹狗」二选一；v1.0.2 只剩「下挂物品」一行，「初始化」改由 Scanner 的全局按钮触发） |

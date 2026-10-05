@@ -14,7 +14,7 @@
 local M = {}
 
 -- 实测常量（定稿 §10，来源：MissionProbe v4 三次会话）
---   组件表 6 张**同住一个区段**，固定偏移
+--   组件表 7 张**同住一个区段**，固定偏移
 local COMPONENT = {
     { off = 0x8111C,   hash = 0xFB8D88A3, size = 52000, name = 'WeaponMagazineComponentData' },
     { off = 0x5DDC5C,  hash = 0xA98BB156, size = 42568, name = 'HellpodRackComponentData'    },
@@ -23,6 +23,10 @@ local COMPONENT = {
     { off = 0x1C6A3FC, hash = 0x3845B1E0, size = 24744, name = 'MountComponentData'          },
     -- v0.8.2 新增：武器的弹道组件（projectile_type 在记录 +0）。装甲车线的 40mm 弹种切换用它。
     { off = 0x2C414EC, hash = 0x45171B68, size = 176224, name = 'ProjectileWeaponComponentData' },
+    -- v0.8.3 新增：武器的「开火模式/功能」组件（function_info @ 记录 +168，内存记录长 1232 B）。
+    --            ⚠ 目前**还没有消费者**：「游戏内可编程弹药切换」在装甲车辆线已回退，
+    --              这里只是先把表广播出来备用（要用时别再重新挖偏移）。
+    { off = 0x18F0AEC, hash = 0x88E4DBB1, size = 462592, name = 'WeaponDataComponentData' },
 }
 -- 探针：先读第 1 张的偏移，若「LDLD + 哈希」对上 ⇒ 这个区段就是组件区段
 local GATE = { off = COMPONENT[1].off, hash = COMPONENT[1].hash }
