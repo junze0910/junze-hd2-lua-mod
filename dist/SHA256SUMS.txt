@@ -6,7 +6,6 @@ efd60216ddac3d6046178899196b4fa6bd01cf10ba8fbc6ff1bc6f33bf4df5cf  AC8-Rack-Backp
 7a4831f8f9a16f1958a8871de63da584af6e4607fd6d76960ae850b6fe82d756  HD2-Scanner-v0.8.1.zip
 529271c1c95dba134235b982e97d7055a48e630a15f68e63ebb02d96a87b75b7  More-Balanced-Exosuit-Emancipator-v1.2.zip
 8e30ed8a82f5a381dff3f7c16f46a261d64949191d6c529a150aace64625b118  More-Balanced-Exosuit-Patriot-v1.2.zip
-0037f1d3b948bb7788ac614457696dd241e7aa08190b3054d763fd5d7809b774  No-Large-Piercing-Medium-v1.4.zip
-9a7e01ad1ea3e76b3a1ea2b3f6d4182aa8971a4e8dd5afa8388ba6f4db25d774  No-Large-Piercing-v1.4.zip
+60c36a89904b0632fc69b3f8753e73b00851a829c7dc79e6a7e43251232839e9  No-Large-Piercing-v1.5.zip
 90d2349b1d9c619e0117e65c8facddfc68e7d1129798cffaef9f21263103bb6e  TD-110-Loadout-v1.0.2.zip
 c7b8daa4e7b9df1690b3a75dd556cadc53a62f6c46f82ef09f7f50fa96c1eba1  Unlock-Kit-v0.7.zip

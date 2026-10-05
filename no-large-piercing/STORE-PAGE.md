@@ -1,6 +1,6 @@
 # No Large Piercing
 
-**Project page / downloads · 项目地址 / 下载：** https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.3
+**Downloads · 下载：** repository `dist/No-Large-Piercing-v1.5.zip`（或 Releases 页）
 
 <!-- 双语发布页 · Bilingual store page
      Description / Installation instructions / Main features / Requirements / Shout outs
@@ -31,7 +31,8 @@ This mod rewrites **every data-table entry** that uses those two tiers:
 | Variant / 版本 | Writes / 写入 | Result / 效果 |
 |---|---|---|
 | **No Large Piercing** | `0` (`None`) | the large-piercing impact effect never plays at all<br>完全不再播放大型穿刺命中特效 |
-| **No Large Piercing (Medium)** | `2` (`PiercingMedium`) | downgraded to the medium-calibre tier — hit feedback stays, it is just less heavy<br>降档为中口径，保留命中反馈，只是没那么"重" |
+
+> The `→ 2` **Medium** variant was retired in v1.5 — only the `→ 0` build is maintained.<br>> `→ 2` 降档版（Medium）自 v1.5 起停止维护，只保留 `→ 0` 版。
 
 This is a **purely visual** change. Damage, armour penetration, ballistics and balance are untouched.
 
@@ -45,8 +46,8 @@ It is a **runtime memory patch**: no game files are modified, and disabling the 
 
 1. Install **Bingus Shared Loader v15 or newer** and make sure it is deployed and enabled.
    安装 **Bingus Shared Loader v15 或更高**，确认已部署并启用。
-2. Download **one** of the two zips (they are mutually exclusive — see Main features).
-   下载**两个 zip 中的一个**（两者互斥，见「主要特性」）。
+2. Download `No-Large-Piercing-v1.5.zip` (the retired Medium variant is not needed).
+   下载 `No-Large-Piercing-v1.5.zip`（已退役的中口径版不需要）。
 3. Import the zip with your HD2 mod manager (HD2MM / Arsenal / …) and enable it.
    用 HD2 mod 管理器（HD2MM / Arsenal 等）导入并启用。
 4. Launch the game. The projectile / explosion settings tables are resident in memory, so the patch
@@ -93,9 +94,13 @@ drifted between game versions.
   EXO-45 外骨骼导弹、MG-206、R-63 勤勉、P-2 / P-35 手枪**，以及**机器人各型火箭弹 / 火炮 /
   坦克炮、光能族等离子与光束、虫族酸液、轨道与飞鹰系战备**（完整 106 条清单见 [INTRO.md](https://github.com/junze0910/junze-hd2-lua-mod/blob/main/no-large-piercing/INTRO.md)）。
 
-* **Two mutually exclusive variants.** Enabling both makes the second one print a notice and exit
-  automatically — you cannot accidentally run them together.
-  **两个版本互斥**，同时启用时后者自动提示并退出，不会互相覆盖。
+* **One-shot by design (v1.5).** The write happens once, right after boot; the scanner then stops
+  for good. The only resident cost is a canary that re-reads 108 four-byte addresses once a minute
+  (432 bytes/min) and re-writes anything the game clobbers.
+  **v1.5 = 一次性写入**：开机写一次就彻底停扫；常驻开销只剩每分钟读 108 个 4 字节地址（432 字节/分钟）的金丝雀。
+* **Retired variants.** The old `→ 2` Medium build and the old maintenance-style scheduling
+  (`ONE_SHOT = false`) both still exist, but only the `→ 0` one-shot build is maintained.
+  `→ 2` 中口径版与旧的维护式调度（`ONE_SHOT = false`）都还在，但只维护 `→ 0` 的一次性版本。
 
 * **Version-resilient by design.** Validation deliberately does **not** depend on record indices or
   hard-coded table sizes — the game re-orders records and appends new enum IDs between patches.

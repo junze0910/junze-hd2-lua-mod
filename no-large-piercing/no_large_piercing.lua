@@ -3,6 +3,14 @@
 -- ===========================================================================
 --  No Large Piercing —— 命中特效等级 → 0 (HitEffectDamageType_None)
 --
+--  ★ v1.5 起【一次性写入】（ONE_SHOT）：启动时把两张表写完、回读验证，然后
+--    彻底停止扫描 —— 不再有维护窗口 / 热区自检 / 兜底全量。稳态开销 0；
+--    唯一的常驻动作是「金丝雀」：每 WATCHDOG_EVERY 帧只读已写入的 108 个地址
+--    （432 B≈0 成本），发现被冲掉就退回 v1.4 的维护式调度。
+--    一次性模式超时（ONE_SHOT_DEADLINE）或金丝雀失效时也会退回维护式调度。
+--    ONE_SHOT = false 可整块关掉，回到 v1.4 行为。
+--    人工兜底：_G.HD2_NoLargePiercing_Rescan() 清空已写入清单、重走一次扫描。
+--
 --  把两张设置表里「特效·伤害类型」为 3 或 4 的记录，全部改写为 0：
 --     ProjectileSettings.effect_damage_type     (直击/弹道)  343 条 → 改 102 条
 --     ExplosionSettings.hit_effect_damage_type  (爆炸)       413 条 → 改   4 条
@@ -29,6 +37,7 @@
 --  ※ 与 mods/dsh/effect_grade_2 互斥，同一时间只能启用其中一个。
 -- ===========================================================================
 
+local VERSION = '1.5'
 local MOD = 'mods/dsh/no_large_piercing'
 if rawget(_G, MOD) then return end
 
@@ -52,6 +61,8 @@ local state = {
   full_interval = 0, full_frame = 0, next_scan_frame = 0,
   regions = nil, region_index = 1, region_offset = 0, prev = '',
   scan_kind = nil, round_hits = 0, empty_rounds = 0,
+  -- 一次性模式（v1.5）
+  finished = false, oneshot_disabled = false, deadline_hit = false,
 }
 rawset(_G, MOD, state)
 rawset(_G, 'HD2_NoLargePiercing_Owner', MOD)
@@ -235,7 +246,7 @@ end
 local SCAN_CHUNK        = 256 * 1024    -- 常态每次读 256 KB（细粒度 → 每帧占用平滑）
 local SCAN_CHUNK_HURRY  = 1024 * 1024   -- 抢时间阶段用 1 MB（少一点每块的固定开销，
                                         --   否则 256KB 块的固定成本会吃掉预算，找表慢一个量级）
-local SCAN_OVERLAP      = 2048          -- 相邻块重叠，防止表跨边界漏检
+local SEAM_KEEP         = 7             -- 跨块缝隙保留字节数（= 签名长度-1；v1.5 不再整块拼接）
 local SCAN_BUDGET       = 0.002         -- 常态：每帧最多 2 ms CPU
 local SCAN_BUDGET_HURRY = 0.010         -- 抢时间：还没打完时每帧 10 ms
                                         --   实机 v1.3：6ms + 256KB 块 → 找表用了 3363 帧(≈56s)，
@@ -262,6 +273,22 @@ local QUIET_AFTER_CHECKS    = 3       -- 连续 N 次复查无异常 → 判定�
 --   做一次真·全量兜底，防止表跑到从未出现过的区段。
 local QUIET_FALLBACK_FRAMES = 1800  -- 静默期热区自检周期（约 30 秒）；0 = 关闭（真静默）
 local QUIET_FULL_EVERY      = 40    -- 每 N 次热区自检做一次全量兜底（约 20 分钟）
+
+-- ★ 一次性写入模式（v1.5 默认）
+--   启动时扫一遍内存 → 写完两张表 → 回读验证 → 彻底停扫（稳态 0 成本）。
+--   与 ONE_SHOT=false 的旧调度（观察窗口 / 热区自检 / 兜底全量）互斥。
+local ONE_SHOT              = true
+local ONE_SHOT_DEADLINE     = 10800   -- 入口帧起 3 分钟内没找齐两张表 → 记日志并退出一次性模式
+local WATCHDOG_EVERY        = 3600    -- 金丝雀周期（帧，≈60 秒）；0 = 完全静默，连金丝雀也不要
+
+-- 现在是「抢时间」阶段吗？
+--   一次性模式：找表阶段全程抢时间（整轮只跑一次，且有 ONE_SHOT_DEADLINE 兜底）；
+--   维护式调度：只有前 HURRY_ROUNDS 轮抢时间。
+local function hurry_now()
+  if state.all_done then return false end
+  if ONE_SHOT and not state.oneshot_disabled then return true end
+  return (state.rounds or 0) <= HURRY_ROUNDS
+end
 
 local MAGIC      = 'LDLD'
 local DESC_OFF   = 24      -- 16 字节数组描述符
@@ -683,14 +710,35 @@ local function begin_scan(kind)
   state.region_index, state.region_offset, state.prev = 1, 0, ''
   state.scan_kind, state.round_hits = kind, 0
   if kind == 'full' and not state.all_done then
-    local ms = ((state.rounds <= HURRY_ROUNDS) and SCAN_BUDGET_HURRY or SCAN_BUDGET) * 1000
+    local ms = (hurry_now() and SCAN_BUDGET_HURRY or SCAN_BUDGET) * 1000
     report(('第 %d 轮全量扫描开始：%d 个可读区域（预算 %d ms/帧）')
       :format(state.rounds, #state.regions, mfloor(ms)))
   end
 end
 
+-- 在 buffer 里找两张表的签名并逐条 apply；limit 非 nil 时只接受 found <= limit 的命中
+local function scan_buffer(buffer, buffer_base, limit)
+  for _, t in ipairs(TABLES) do
+    local from = 1
+    while true do
+      local found = sfind(buffer, t.sig, from, true)
+      if not found then break end
+      if limit and found > limit then break end
+      local abs = buffer_base + found - 1
+      if not is_self_hit(abs) then
+        local hit_ok, hit_err = pcall(apply, abs, t)
+        if not hit_ok then
+          state.errs = state.errs + 1
+          if state.errs <= 5 then report('命中处理异常: ' .. tostring(hit_err), true) end
+        end
+      end
+      from = found + 1
+    end
+  end
+end
+
 local function slice()
-  local hurry = (not state.all_done) and (state.rounds or 0) <= HURRY_ROUNDS
+  local hurry = hurry_now()
   local deadline = os.clock() + (hurry and SCAN_BUDGET_HURRY or SCAN_BUDGET)
   while state.region_index <= #state.regions do
     local region = state.regions[state.region_index]
@@ -698,31 +746,20 @@ local function slice()
       if os.clock() > deadline then return false end
       local amount = mmin(hurry and SCAN_CHUNK_HURRY or SCAN_CHUNK,
                           region.size - state.region_offset)
-      local chunk = api.read(region.base + state.region_offset, amount)
+      local chunk_base = region.base + state.region_offset
+      local chunk = api.read(chunk_base, amount)
       if chunk then
-        -- 与上一块尾部拼接：数据表可能横跨 chunk 边界，不拼就会整张漏掉
+        scan_buffer(chunk, chunk_base, nil)
+        -- ★ 跨块命中：数据表可能横跨 chunk 边界。v1.4 用 prev..chunk 整块拼接
+        --   （每块一次 MB 级字符串拷贝 + 整块二次搜索）；v1.5 只留「签名长度-1」
+        --   字节的缝，在 ≤14 B 的小串里找那些"起始位置落在上一块里"的命中。
         local prev = state.prev or ''
-        local window = prev .. chunk
-        local window_base = region.base + state.region_offset - #prev
-        for _, t in ipairs(TABLES) do
-          local from = 1
-          while true do
-            local found = sfind(window, t.sig, from, true)
-            if not found then break end
-            local abs = window_base + found - 1
-            if not is_self_hit(abs) then
-              local hit_ok, hit_err = pcall(apply, abs, t)
-              if not hit_ok then
-                state.errs = state.errs + 1
-                if state.errs <= 5 then report('命中处理异常: ' .. tostring(hit_err), true) end
-              end
-            end
-            from = found + 1
-          end
+        if #prev > 0 then
+          scan_buffer(prev .. ssub(chunk, 1, SEAM_KEEP), chunk_base - #prev, #prev)
         end
-        state.prev = ssub(chunk, -SCAN_OVERLAP)
+        state.prev = ssub(chunk, -SEAM_KEEP)
       else
-        state.prev = ''        -- 读失败必须清空，否则下一块的 window_base 会算错
+        state.prev = ''        -- 读失败必须清空，否则下一块的缝会算错
       end
       state.region_offset = state.region_offset + amount
     end
@@ -841,6 +878,85 @@ local function recheck()
   end
 end
 
+-- ===========================================================================
+-- 一次性模式（v1.5）：写完就停 + 金丝雀
+-- ===========================================================================
+-- 只读复查：已写入的 108 个地址 × 4 字节（不是整表）。
+--   rewrite = true 时顺手补写那些被游戏写回 3/4 的地址。
+local function verify_slots(rewrite)
+  local live, missing, rewrote = 0, 0, 0
+  for address, info in pairs(state.slots) do
+    local cur = api.read(address, 4)
+    if cur == info.expect then
+      live = live + 1
+    elseif rewrite and cur and SOURCE_VALUES[u32_at(cur, 0)] then
+      if write_bytes(address, info.expect, 4) then
+        live, rewrote = live + 1, rewrote + 1
+      else
+        missing = missing + 1
+      end
+    else
+      missing = missing + 1
+    end
+  end
+  return live, missing, rewrote
+end
+
+-- 一次性模式收尾：再确认一遍全部地址，然后从此不再扫描
+local function one_shot_finish()
+  state.regions = nil
+  local slots = 0
+  for _ in pairs(state.slots) do slots = slots + 1 end
+  local _, missing = verify_slots(false)
+  if missing > 0 or slots == 0 then
+    state.oneshot_disabled = true
+    state.next_scan_frame = state.frame + 30
+    report(('一次性写入未能确认（%d/%d 个地址不是目标值）→ 退回维护式调度，继续复查/重扫')
+      :format(missing, slots), true)
+    return
+  end
+  state.finished = true
+  local tail
+  if WATCHDOG_EVERY > 0 then
+    tail = ('（金丝雀：每 %d 秒只读这 %d 个地址）'):format(mfloor(WATCHDOG_EVERY / 60), slots)
+  else
+    tail = '（金丝雀已关闭：之后不做任何事）'
+  end
+  report(('一次性写入完成：%d 张表 / %d 个地址全部命中，扫描全部停止%s')
+    :format(resolved_tables(), slots, tail), true)
+end
+
+-- 金丝雀：一次性模式下唯一的常驻开销（默认每次 432 字节）
+local function canary()
+  local _, missing, rewrote = verify_slots(true)
+  if rewrote > 0 then
+    report(('金丝雀：补写被冲掉的 %d 处（游戏在把值写回 3/4）'):format(rewrote), true)
+  end
+  if missing > 0 then
+    state.finished, state.oneshot_disabled = false, true
+    state.quiet, state.stable_checks, state.empty_rounds = false, 0, 0
+    state.next_scan_frame = state.frame + 1
+    report(('金丝雀：%d 个地址已失效（表被释放/换图）→ 退出一次性模式，恢复维护式调度')
+      :format(missing), true)
+  end
+end
+
+-- 手动重新写入一次（一次性模式的人工兜底）：清掉「已完成」状态、重走启动扫描。
+--   换图后如果发现大型穿刺特效回来了，调用它重新定位/重写两张表。
+rawset(_G, 'HD2_NoLargePiercing_Rescan', function()
+  state.finished, state.oneshot_disabled, state.deadline_hit = false, false, false
+  state.patched, state.slots, state.verified = {}, {}, {}
+  state.all_done, state.done_armed, state.round_hits = false, false, 0
+  state.quiet, state.stable_checks, state.empty_rounds = false, 0, 0
+  state.regions = nil
+  state.deadline_frame = state.frame + ONE_SHOT_DEADLINE
+  state.next_scan_frame = state.frame + 1
+  state.manual_rounds = (state.manual_rounds or 0) + 1
+  report(('手动重新扫描（第 %d 次）：已清空已写入清单，重新定位两张表')
+    :format(state.manual_rounds), true)
+  return true
+end)
+
 local function frame(dt)
   state.frame = state.frame + 1
 
@@ -848,8 +964,31 @@ local function frame(dt)
     if state.frame < 120 then return end
     started = true
     state.next_scan_frame = state.frame
-    report(('目标 3/4 → %s；常态每帧预算 %d ms，打完前 %d ms')
-      :format(TARGET_LABEL, mfloor(SCAN_BUDGET * 1000), mfloor(SCAN_BUDGET_HURRY * 1000)), true)
+    state.deadline_frame = state.frame + ONE_SHOT_DEADLINE
+    if ONE_SHOT and not state.oneshot_disabled then
+      report(('一次性写入模式：3/4 → %s；启动时扫一遍（每帧 %d ms），写完即停')
+        :format(TARGET_LABEL, mfloor(SCAN_BUDGET_HURRY * 1000)), true)
+    else
+      report(('目标 3/4 → %s；常态每帧预算 %d ms，打完前 %d ms')
+        :format(TARGET_LABEL, mfloor(SCAN_BUDGET * 1000), mfloor(SCAN_BUDGET_HURRY * 1000)), true)
+    end
+  end
+
+  -- ★ 一次性模式（v1.5 默认）：两张表都写完 → 彻底停扫（只留金丝雀）。
+  if state.finished then
+    if WATCHDOG_EVERY > 0 and state.frame % WATCHDOG_EVERY == 0 then
+      local okc, errc = pcall(canary)
+      if not okc then report('金丝雀异常: ' .. tostring(errc), true) end
+    end
+    return
+  end
+  if ONE_SHOT and not state.oneshot_disabled then
+    if state.all_done then one_shot_finish(); return end
+    if not state.deadline_hit and state.frame >= (state.deadline_frame or 0) then
+      state.deadline_hit, state.oneshot_disabled = true, true
+      report(('一次性写入超时（%d 帧内只定位到 %d/%d 张表）→ 本次会话退回维护式调度，继续按退避重试')
+        :format(ONE_SHOT_DEADLINE, resolved_tables(), #TABLES), true)
+    end
   end
 
   if state.frame % RECHECK_EVERY == 0 then
@@ -915,4 +1054,5 @@ shutdown = function(...)
   if old_shutdown then return old_shutdown(...) end
 end
 
-report(('已加载：3/4 → %s（等待第 120 帧开始扫描）'):format(TARGET_LABEL), true)
+report(('已加载：3/4 → %s（%s；等待第 120 帧开始扫描）')
+  :format(TARGET_LABEL, ONE_SHOT and '一次性写入模式' or '维护式调度'), true)

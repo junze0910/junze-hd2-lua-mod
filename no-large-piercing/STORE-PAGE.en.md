@@ -1,6 +1,6 @@
 # No Large Piercing
 
-**Project page / downloads:** https://github.com/junze0910/junze-hd2-lua-mod/releases/tag/v1.3
+**Downloads:** repository `dist/No-Large-Piercing-v1.5.zip` (or the Releases page)
 
 ## Description
 
@@ -19,7 +19,8 @@ This mod rewrites **every data-table entry** that uses those two tiers:
 | Variant | Writes | Result |
 |---|---|---|
 | **No Large Piercing** | `0` (`None`) | the large-piercing impact effect never plays at all |
-| **No Large Piercing (Medium)** | `2` (`PiercingMedium`) | downgraded to the medium-calibre tier — hit feedback stays, it is just less heavy |
+
+> The `→ 2` **Medium** variant was retired in v1.5 — only the `→ 0` build is maintained.
 
 This is a **purely visual** change. Damage, armour penetration, ballistics and balance are untouched.
 It is a **runtime memory patch**: no game files are modified, and disabling the mod restores everything.
@@ -27,7 +28,7 @@ It is a **runtime memory patch**: no game files are modified, and disabling the 
 ## Installation instructions
 
 1. Install **Bingus Shared Loader v15 or newer** and make sure it is deployed and enabled.
-2. Download **one** of the two zips (they are mutually exclusive — see Main features).
+2. Download `No-Large-Piercing-v1.5.zip` (the retired Medium variant is not needed).
 3. Import the zip with your HD2 mod manager (HD2MM / Arsenal / …) and enable it.
 4. Launch the game. The projectile / explosion settings tables are resident in memory, so the patch
    lands about **2 seconds after boot** — you do **not** need to enter a mission first.
@@ -56,14 +57,15 @@ useful for confirming the enum has not drifted between game versions).
   E/AT-12 Anti-Tank Emplacement, EXO-45 exosuit missiles, MG-206, R-63 Diligence, P-2 / P-35
   sidearms**, plus **bot rockets / artillery / tank guns, Illuminate plasma and beams, Terminid
   acid**, and **Orbital / Eagle stratagems** — full 106-entry list in [INTRO.md](https://github.com/junze0910/junze-hd2-lua-mod/blob/main/no-large-piercing/INTRO.md).
-* **Two mutually exclusive variants.** Enabling both makes the second one print a notice and exit
-  automatically — you cannot accidentally run them together.
+* **One-shot by design (v1.5).** The write happens once, right after boot; the scanner then stops
+  for good. The only resident cost is a canary that re-reads 108 four-byte addresses once a minute
+  (432 bytes/min) and re-writes anything the game clobbers.
 * **Version-resilient by design.** Validation deliberately does **not** depend on record indices or
   hard-coded table sizes — the game re-orders records and appends new enum IDs between patches.
   If the record layout ever changes, the mod **refuses to write and logs the reason** instead of
   corrupting memory.
-* **Self-maintaining.** Re-checks every ~10 s; full re-scan (including re-enumerating memory
-  regions) every ~5 min. If the tables exist in several in-memory copies, **all** are rewritten.
+* **No background scanning** by default (`ONE_SHOT = false` brings back the old re-check + hot-zone
+  + full fallback scheduling, which does rewrite every in-memory copy it can find).
 * **Auditable.** Every write is read back and verified entry-by-entry; original bytes and the exact
   change list are dumped to the log folder.
 * **Memory-only** — nothing written to disk, fully reversible.
