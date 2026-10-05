@@ -162,7 +162,15 @@ TD-220 二档、40mm 弹种二档、**M-102 三档**。
 
 ## 十、待办
 
-- ~~实机验证 v1.1.0 / TD-110 / TD-220 线~~：**已实机运行通过（用户确认，2026-10-05）** —— TD-110 / TD-220 / M-102 三辆车。
-  ⚠ 未留原始日志行：按 §6.33 的精神，要对外写"实测细节"（射界能否转满一圈 / M-102 后两档手感）还得补一次带日志的复验。
+- ~~实机验证 v1.1.0 / TD-110 / TD-220 线~~：**已实机（2026-10-05），`ArmorTweaks.log` 原文在手** ——
+  `本体 = B0C9FAF4AF8903F9（recIdx 实测 123）`、`挂载记录区起点 = 5184`、`射界记录区起点 = 2336`（与离线分析逐位一致）；
+  **M-102 两个变体实机 recIdx = 19 / 117** 写入读回通过（`4EC28E03DB1E5C08 -> FD885F1AB3EE7298`）；
+  TD-220 槽1（recIdx 23）/ 40mm 弹种（recIdx 47）同样通过；STATUS `挂载 5 处 / 射界 4 处`、`已写=16 拒绝=0`、无一条「跳过」。
+  ⚠ 「射界能不能转满一圈」是手感项（日志只能证明 4 条炮塔记录都在跟踪中）。
+- ⚠ **cfg 路径（2026-10-05 实机发现，待定）**：文档写 `%LOCALAPPDATA%\CowboyBingus\Helldivers2\ArmorTweaks.cfg`，
+  实际落在**游戏根目录** `F:\SteamLibrary\steamapps\common\Helldivers 2\ArmorTweaks.cfg`（172 B，内容与日志热重读值一致）；
+  `ExoLoadout.cfg` / `GuardDogLoadout.cfg` / `TankStormLoadout.cfg` / `StratUnlock.cfg` 同样都在游戏根
+  ⇒ `loader.log_directory` 已不再以 `/Logs` 结尾（或为 nil），`base = log_directory:gsub('[/\\]Logs$','')` 落空 → `base='.'` → CWD。
+  **仓库里 5 个 mod 同病**；修法待定（惰性解析 + `%LOCALAPPDATA%` 优先 + 兼容读旧位置）。
 - Arsenal 库换代：库里还是 `HD2-Scanner-v0.8.1` 与 `TD-110-Loadout-v1.0.2`；Armor-Tweaks 要作为**新条目**导入，旧的 TD-110-Loadout 手动删。
 4. `Scanner-API.md` 补表：`ProjectileWeaponComponentData 0x45171B68` / `WeaponDataComponentData 0x88E4DBB1`。

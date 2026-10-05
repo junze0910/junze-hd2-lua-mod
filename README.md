@@ -56,8 +56,10 @@ Ready-to-install packages: [`dist/`](https://github.com/junze0910/junze-hd2-lua-
 **实机验证（2026-10-04）**：`Custom Supply v0.1b`（★ 选择位 / 可用状态 / 包架表已定位 / 槽1..4 写入含摆位 / 冷却 45·75·90·95·120 s 与公式逐项吻合，改槽即时生效）—— 状态行 `前置 = Bingus Shared Loader loader-v17 / API 1`。
 **已发布**：`Custom Supply v0.1d` 的「爆炸筒」与 `v0.1e` 的 **SEAF 大炮覆盖**均已实机通过（用户确认，2026-10-04）；v0.1e 已并入 `logistics-v0.1alpha`。
 **已发布**：`Unlock Kit v0.6`（解锁台）—— 武器 P-41 / G-11 进军械库、战备 6 条进战备列表、只读侦察正常，已实机通过（用户确认，2026-10-04），随 `logistics-v0.1alpha` 发布。
-**实机验证（2026-10-05，用户确认）**：`Armor Tweaks v1.1.0` 已装进游戏实机运行通过 —— TD-110 / TD-220 / **M-102** 三辆车。
-（⚠ 未留原始日志行；若要对外宣称"射界能转满一圈"这类细节，需补一次带 `ArmorTweaks.log` 的复验。）
+**实机验证（2026-10-05，`ArmorTweaks.log` + `HD2Scanner.log` 原文在手）**：
+`Armor Tweaks v1.1.0`（`挂载 5 处 / 射界 4 处`、`已写=16 拒绝=0`；**M-102 两个变体实机 recIdx = 19 / 117** 写入读回通过，TD-220 槽1、40mm 弹种同步通过）、
+`HD2 Scanner v0.8.3`（自检 11/11、**连续 40 轮 `命中 9`** = 7 组件 + 2 常驻，9 张表全部广播）。
+（⚠ 「射界能不能转满一圈」属手感项，日志只证明 4 条炮塔记录都在跟踪中。另：mod 的 cfg **实际写在游戏根目录**，不是文档里的 `%LOCALAPPDATA%` —— 见 `docs/ARMOR-TWEAKS-交接.md` 待办。）
 **更早的实机验证（2026-09-25）**：AC-8 / 实弹狗 / TD-110 Co-Op / 更忙的驾驶员 / No Large Piercing 两版 全部实机通过（`OK - 补丁生效中（N 处）`，连续 40 分钟以上保持生效）；外骨骼两版为实机 + 离线仿真（`more-balanced-exosuit/DESIGN.md`）。
 
 ## 依赖

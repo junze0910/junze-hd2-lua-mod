@@ -106,7 +106,8 @@ The TD-110 no longer stops working because another vehicle's data changed.
 
 * **Mounts are read once, when a vehicle spawns**: re-summon the vehicle after changing the loadout. Traverse and ammo type are read live.
 * The **M-102 HMG turret / 40mm autocannon turret** reuse normal mount items, but their **mount node differs from the
-  stock `frv_mg`** — **verified in-game** (user-confirmed, 2026-10-05); if it misbehaves on your build, switch back to the stock vehicle HMG.
+  stock `frv_mg`** — **written and read back successfully in-game on 2026-10-05** (both variants: recIdx 19 and 117, zero refusals);
+  if it misbehaves on your build, switch back to the stock vehicle HMG.
 * The **M-104 flamethrower is not offered** (that weapon has resource-loading problems; user decision, 2026-10-05).
 * **Horizontal traverse only**: the camera/view limits stay as-is, so the turret turns further than you can look.
 * The *Busy* mode's **HMG turret** is **not a real mount entry** in the game data (it is a standalone weapon entity),

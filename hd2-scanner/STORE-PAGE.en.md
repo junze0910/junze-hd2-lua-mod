@@ -47,7 +47,7 @@ Current consumers:
   **scan status** (click = run one round now; the description box shows live state),
   **resolve stratagem table (AOB)**, and **write diagnostics to log**
 * Self-check 11/11: decoders match the MDL reference bit-for-bit
-* Stable scanning: per-round region/table counts are stable (v0.8.2 measured `命中 7` across rounds; **v0.8.3 broadcasts one more component table, so the count changes and has not been re-checked in-game**)
+* Stable scanning: **9 table hits per round, 40 consecutive rounds live-verified with v0.8.3 (2026-10-05)** — 7 component + 2 standalone tables
 * Log: `%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\HD2Scanner.log`
 
 ## Usage
